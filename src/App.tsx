@@ -48,6 +48,196 @@ import {
 // @ts-ignore
 import QrScanner from "react-qr-scanner";
 
+// --- MÃ SCRIPT GOOGLE SHEET (GIỮ NGUYÊN V2.7) ---
+const SCRIPT_CODE = `
+function doGet(e) {
+  var doc = SpreadsheetApp.getActiveSpreadsheet();
+  var history = [];
+
+  // 1. Đọc Lịch sử
+  function readFromSheet(sheetName) {
+    var sheet = doc.getSheetByName(sheetName);
+    if (sheet && sheet.getLastRow() > 1) {
+      var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 16).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var r = data[i];
+        var clean = function(val) { return String(val).startsWith("'") ? String(val).substring(1) : String(val); };
+        var dateVal = r[0];
+        if (dateVal instanceof Date) { dateVal = Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "yyyy-MM-dd"); } 
+        else { dateVal = clean(dateVal); }
+
+        history.push({
+          date: dateVal, type: r[1], sku: clean(r[2]), style: clean(r[3]), color: clean(r[4]), 
+          unit: clean(r[5]), po: clean(r[6]), shipdate: clean(r[7]), poQty: r[8], size: clean(r[9]), 
+          masterBoxQty: r[10], cartonSize: r[11], cartonNC: r[12], quantity: r[13], 
+          locationOrReceiver: clean(r[14]), note: clean(r[15])
+        });
+      }
+    }
+  }
+  readFromSheet('NhapKho');
+  readFromSheet('XuatKho');
+  history.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+
+  // 2. Đọc Danh mục
+  var sheetProducts = doc.getSheetByName('DanhMuc');
+  var products = [];
+  if (sheetProducts && sheetProducts.getLastRow() > 1) {
+    var pData = sheetProducts.getRange(2, 1, sheetProducts.getLastRow() - 1, 12).getValues();
+    for (var i = 0; i < pData.length; i++) {
+      var r = pData[i];
+      var clean = function(val) { return String(val).startsWith("'") ? String(val).substring(1) : String(val); };
+      products.push({
+        sku: clean(r[0]), style: clean(r[1]), color: clean(r[2]), unit: clean(r[3]), 
+        po: clean(r[4]), shipdate: clean(r[5]), poQty: r[6], size: clean(r[7]), 
+        masterBoxQty: r[8], cartonSize: r[9], cartonNC: r[10], location: clean(r[11])
+      });
+    }
+  }
+
+  // 3. Đọc Cấu hình (Mật khẩu Admin)
+  var sheetConfig = doc.getSheetByName('CauHinh');
+  var adminPassword = "123456"; // Mặc định
+  if (sheetConfig) {
+      var val = sheetConfig.getRange(1, 1).getValue();
+      if (val) adminPassword = val.toString();
+  }
+
+  // 4. Đọc Danh sách Vị trí
+  var sheetLocations = doc.getSheetByName('CauHinhViTri');
+  var locations = [];
+  if (sheetLocations && sheetLocations.getLastRow() > 0) {
+      var lData = sheetLocations.getRange(1, 1, sheetLocations.getLastRow(), 1).getValues();
+      for (var i = 0; i < lData.length; i++) {
+         if (lData[i][0]) locations.push(String(lData[i][0]));
+      }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ 
+    status: "success", 
+    history: history, 
+    products: products,
+    settings: { password: adminPassword },
+    locations: locations
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.tryLock(30000); 
+  try {
+    var doc = SpreadsheetApp.getActiveSpreadsheet();
+    var data = JSON.parse(e.postData.contents);
+    var action = data.action;
+
+    if (action === 'transaction') {
+      var sheetName = data.type === 'NHẬP' ? 'NhapKho' : 'XuatKho';
+      var sheet = doc.getSheetByName(sheetName);
+      if (!sheet) {
+        sheet = doc.insertSheet(sheetName);
+        sheet.appendRow(['Ngày', 'Loại', 'Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'PO Qty', 'Size', 'M.Box', 'KT Thùng', 'NC Thùng', 'SL', 'Vị trí/Nhóm', 'Ghi chú']);
+      }
+      sheet.appendRow([
+        data.date, data.type, "'"+data.sku, "'"+data.style, "'"+data.color, "'"+data.unit, 
+        "'"+data.po, "'"+data.shipdate, "'"+data.poQty, "'"+data.size, "'"+data.masterBoxQty, 
+        "'"+data.cartonSize, "'"+data.cartonNC, data.quantity, "'"+data.locationOrReceiver, "'"+data.note
+      ]);
+      if (data.type === 'NHẬP' && data.locationOrReceiver) {
+        updateLocationInSheet(doc, data.sku, data.locationOrReceiver);
+      }
+    }
+    else if (action === 'add_product' || action === 'bulk_add_products') {
+      var sheet = doc.getSheetByName('DanhMuc');
+      if (!sheet) {
+        sheet = doc.insertSheet('DanhMuc');
+        sheet.appendRow(['Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'PO Qty', 'Size', 'M.Box', 'KT Thùng', 'NC Thùng', 'Vị trí']);
+      }
+      var items = action === 'add_product' ? [data] : data.items;
+      var newRows = [];
+      var currentData = [];
+      if (sheet.getLastRow() > 1) { currentData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 12).getValues(); }
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var isDuplicate = false;
+        for (var j = 0; j < currentData.length; j++) {
+           var row = currentData[j];
+           if (String(row[0]).replace(/'/g,"") == item.sku && String(row[1]).replace(/'/g,"") == item.style && String(row[4]).replace(/'/g,"") == item.po && String(row[7]).replace(/'/g,"") == item.size) {
+               isDuplicate = true; break;
+           }
+        }
+        if (!isDuplicate) {
+           newRows.push([ "'"+item.sku, "'"+item.style, "'"+item.color, "'"+item.unit, "'"+item.po, "'"+item.shipdate, "'"+item.poQty, "'"+item.size, "'"+item.masterBoxQty, "'"+item.cartonSize, "'"+item.cartonNC, "'"+item.location ]);
+           currentData.push(["'"+item.sku, "'"+item.style, "", "", "'"+item.po, "", "", "'"+item.size]); 
+        }
+      }
+      if (newRows.length > 0) { sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 12).setValues(newRows); }
+      return ContentService.createTextOutput(JSON.stringify({"result":"success", "added": newRows.length})).setMimeType(ContentService.MimeType.JSON);
+    }
+    else if (action === 'delete_product') {
+      var sheet = doc.getSheetByName('DanhMuc');
+      if (sheet) {
+        var values = sheet.getDataRange().getValues();
+        for (var i = 1; i < values.length; i++) {
+           if (String(values[i][0]).replace(/'/g,"") == data.sku && String(values[i][4]).replace(/'/g,"") == data.po && String(values[i][7]).replace(/'/g,"") == data.size) {
+               sheet.deleteRow(i + 1); break;
+           }
+        }
+      }
+    }
+    else if (action === 'update_location_history') {
+      var sheet = doc.getSheetByName('NhapKho');
+      if (sheet) {
+        var values = sheet.getDataRange().getValues();
+        for (var i = 1; i < values.length; i++) {
+           if (String(values[i][2]).replace(/'/g,"") == data.sku && 
+               String(values[i][6]).replace(/'/g,"") == data.po && 
+               String(values[i][9]).replace(/'/g,"") == data.size &&
+               String(values[i][14]).replace(/'/g,"") == data.oldLocation) {
+               sheet.getRange(i + 1, 15).setValue("'"+data.newLocation);
+           }
+        }
+      }
+      updateLocationInSheet(doc, data.sku, data.newLocation);
+    }
+    else if (action === 'update_password') {
+      var sheet = doc.getSheetByName('CauHinh');
+      if (!sheet) { 
+        sheet = doc.insertSheet('CauHinh'); 
+        sheet.hideSheet();
+      }
+      sheet.getRange(1, 1).setValue(data.password);
+    }
+    else if (action === 'update_locations') {
+      var sheet = doc.getSheetByName('CauHinhViTri');
+      if (!sheet) { 
+         sheet = doc.insertSheet('CauHinhViTri');
+         sheet.hideSheet();
+      }
+      sheet.clear();
+      var locs = data.locations;
+      if (locs && locs.length > 0) {
+         var rows = locs.map(function(l) { return [l]; });
+         sheet.getRange(1, 1, rows.length, 1).setValues(rows);
+      }
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({"result":"success"})).setMimeType(ContentService.MimeType.JSON);
+  } catch (e) {
+    return ContentService.createTextOutput(JSON.stringify({"result":"error", "error": e})).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateLocationInSheet(doc, sku, newLoc) {
+  var sheet = doc.getSheetByName('DanhMuc');
+  if (sheet) {
+    var found = sheet.createTextFinder(sku).matchEntireCell(true).findNext();
+    if (found) { sheet.getRange(found.getRow(), 12).setValue("'"+newLoc); }
+  }
+}
+`;
+
 // --- HELPERS ---
 const normalize = (val) =>
   val === null || val === undefined ? "" : String(val).trim().toLowerCase();
@@ -1800,6 +1990,270 @@ const TransactionView = ({
           </form>
         )}
       </div>
+    </div>
+  );
+};
+
+const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => (
+  <div className="bg-white rounded-xl shadow-md p-6">
+    <h2 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2">
+      Nhật Ký Nhập Xuất (Gần đây)
+    </h2>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm text-left">
+        <thead className="bg-gray-100 text-gray-600">
+          <tr>
+            <th className="p-3">Ngày</th>
+            <th className="p-3">Loại</th>
+            <th className="p-3">Mã hàng</th>
+            <th className="p-3">Style</th>
+            <th className="p-3 text-right">SL</th>
+            <th className="p-3">Vị trí/Nơi nhận</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {history.slice(0, 100).map((h, i) => (
+            <tr key={i} className="hover:bg-gray-50 group">
+              <td className="p-3 text-gray-600">{formatDateDisplay(h.date)}</td>
+              <td className="p-3">
+                <span
+                  className={`text-xs font-bold px-2 py-1 rounded ${
+                    h.type === "NHẬP"
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-orange-100 text-orange-700"
+                  }`}
+                >
+                  {h.type}
+                </span>
+              </td>
+              <td className="p-3 font-mono">{h.sku}</td>
+              <td className="p-3">{h.style}</td>
+              <td className="p-3 text-right font-bold">{h.quantity}</td>
+              <td className="p-3 text-gray-600 truncate max-w-[150px]">
+                {h.locationOrReceiver}
+              </td>
+              <td className="p-3 text-right">
+                {/* BUTTON DELETE - NỔI KHỐI TO HƠN */}
+                {isAdmin && (
+                  <button
+                    onClick={() => onDeleteHistoryItem(i)}
+                    className="bg-red-100 hover:bg-red-200 text-red-600 p-2 rounded-lg shadow-md border border-red-200 transition-all active:scale-95 flex items-center justify-center w-8 h-8"
+                    title="Xóa phiếu này (trên App)"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
+const SettingsHelpView = ({
+  activeTab,
+  scriptUrl,
+  onSaveUrl,
+  showNotification,
+  onChangePassword,
+  currentPassword,
+  locations,
+  onLocationsChange,
+}) => {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [newLocationInput, setNewLocationInput] = useState("");
+
+  const handleChangePassword = () => {
+    if (oldPassword !== currentPassword) {
+      showNotification("error", "Mật mã cũ không đúng! Vui lòng nhập lại.");
+      return;
+    }
+    if (newPassword.length < 4) {
+      showNotification("error", "Mật mã phải có ít nhất 4 ký tự!");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showNotification("error", "Mật mã xác nhận không khớp!");
+      return;
+    }
+    onChangePassword(newPassword);
+    setOldPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  };
+
+  const handleAddLocation = () => {
+    if (!newLocationInput.trim()) return;
+    if (locations.includes(newLocationInput.trim())) {
+      showNotification("error", "Vị trí này đã tồn tại!");
+      return;
+    }
+    onLocationsChange([...locations, newLocationInput.trim()]);
+    setNewLocationInput("");
+    showNotification("success", "Đã thêm vị trí mới!");
+  };
+
+  const handleRemoveLocation = (locToRemove) => {
+    if (confirm(`Xóa vị trí "${locToRemove}"?`)) {
+      onLocationsChange(locations.filter((l) => l !== locToRemove));
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-md p-6 max-w-2xl mx-auto">
+      {activeTab === "settings" ? (
+        <>
+          <h2 className="text-xl font-bold mb-4">Cấu Hình Kết Nối</h2>
+          <input
+            type="text"
+            value={scriptUrl}
+            onChange={(e) => onSaveUrl(e.target.value)}
+            placeholder="Dán Web App URL vào đây..."
+            className="w-full p-3 border rounded mb-4 text-base"
+          />
+          <button
+            onClick={() =>
+              showNotification(
+                "success",
+                "Đã lưu (Cần bấm Đồng bộ để tải dữ liệu về)"
+              )
+            }
+            className="bg-green-600 text-white px-6 py-2 rounded"
+          >
+            Lưu cấu hình
+          </button>
+
+          <hr className="my-6 border-gray-200" />
+
+          {/* --- QUẢN LÝ VỊ TRÍ KHO --- */}
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <MapPin className="text-purple-600" /> Quản lý Danh Sách Vị Trí
+          </h2>
+          <div className="bg-purple-50 p-4 rounded-lg mb-6">
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                className="flex-1 p-2 border border-purple-200 rounded text-base outline-none focus:border-purple-500"
+                placeholder="Nhập tên kệ/vị trí mới (VD: Kệ C1)..."
+                value={newLocationInput}
+                onChange={(e) => setNewLocationInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddLocation()}
+              />
+              <button
+                onClick={handleAddLocation}
+                className="bg-purple-600 text-white px-4 py-2 rounded font-bold hover:bg-purple-700"
+              >
+                Thêm
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {locations.length === 0 && (
+                <span className="text-gray-400 text-sm italic">
+                  Chưa có vị trí nào.
+                </span>
+              )}
+              {locations.map((loc, idx) => (
+                <span
+                  key={idx}
+                  className="bg-white text-purple-800 px-3 py-1 rounded-full shadow-sm border border-purple-100 flex items-center gap-2 font-medium"
+                >
+                  {loc}
+                  <button
+                    onClick={() => handleRemoveLocation(loc)}
+                    className="text-gray-400 hover:text-red-500 p-0.5 rounded-full"
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2 italic">
+              * Danh sách này sẽ được đồng bộ lên Google Sheet để dùng chung cho
+              mọi thiết bị.
+            </p>
+          </div>
+
+          <hr className="my-6 border-gray-200" />
+
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <KeyRound className="text-indigo-600" /> Cài đặt mật mã Admin
+          </h2>
+          <div className="space-y-3">
+            {/* BỔ SUNG: Ô nhập mật mã cũ */}
+            <input
+              type="password"
+              className="w-full p-2 border rounded text-base"
+              placeholder="Mật mã hiện tại..."
+              value={oldPassword}
+              onChange={(e) => setOldPassword(e.target.value)}
+            />
+            <input
+              type="password"
+              className="w-full p-2 border rounded text-base"
+              placeholder="Mật mã mới..."
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+            <input
+              type="password"
+              className="w-full p-2 border rounded text-base"
+              placeholder="Xác nhận mật mã mới..."
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+            <button
+              onClick={handleChangePassword}
+              className="bg-indigo-600 text-white px-4 py-2 rounded w-full font-bold"
+            >
+              Lưu & Đồng bộ mật mã
+            </button>
+            <p className="text-xs text-gray-500 italic">
+              * Mật mã sẽ được lưu lên đám mây và áp dụng cho tất cả các máy.
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
+          <h2 className="text-xl font-bold mb-4 text-blue-600">
+            CẬP NHẬT MÃ SCRIPT MỚI (V2.7 - Tự Động Đồng Bộ Vị Trí)
+          </h2>
+          <p className="mb-2 text-sm text-red-500 font-bold">
+            QUAN TRỌNG: Bạn CẦN cập nhật mã này để hỗ trợ tính năng đồng bộ danh
+            sách vị trí kho.
+          </p>
+          <div className="bg-gray-900 text-gray-100 p-4 rounded text-xs overflow-x-auto relative">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(SCRIPT_CODE);
+                showNotification("success", "Đã copy code");
+              }}
+              className="absolute top-2 right-2 text-white bg-gray-700 p-1 rounded hover:bg-gray-600"
+            >
+              <Copy size={14} />
+            </button>
+            <pre>{SCRIPT_CODE}</pre>
+          </div>
+          <div className="mt-4 text-sm">
+            <strong>Hướng dẫn Deploy lại (Bắt buộc):</strong>
+            <ul className="list-disc ml-5 mt-1 text-gray-600">
+              <li>Vào Extensions &gt; Apps Script.</li>
+              <li>Dán đè code mới vào.</li>
+              <li>
+                Bấm <strong>Deploy</strong> &rarr;{" "}
+                <strong>New Deployment</strong>.
+              </li>
+              <li>
+                Chọn type: Web app. Who has access: <strong>Anyone</strong>.
+              </li>
+              <li>Bấm Deploy và dùng URL đó.</li>
+            </ul>
+          </div>
+        </>
+      )}
     </div>
   );
 };
