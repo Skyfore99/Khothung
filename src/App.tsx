@@ -26,7 +26,7 @@ import {
   Package,
   ClipboardPaste,
   MapPin,
-  Edit3, // Dùng icon này cho nút sửa
+  Edit3,
   RefreshCw,
   Filter,
   X,
@@ -44,12 +44,13 @@ import {
   Camera,
   RefreshCcw,
   AlertTriangle,
-  MoveRight, // Icon cho chuyển kho
+  MoveRight,
+  Users,
 } from "lucide-react";
 
 import QrScanner from "react-qr-scanner";
 
-// --- MÃ SCRIPT GOOGLE SHEET (GIỮ NGUYÊN V3.2) ---
+// --- MÃ SCRIPT GOOGLE SHEET (CẬP NHẬT V3.9 - LƯU CHUNG CẤU HÌNH) ---
 const SCRIPT_CODE = `
 function doGet(e) {
   var doc = SpreadsheetApp.getActiveSpreadsheet();
@@ -59,13 +60,11 @@ function doGet(e) {
   function readFromSheet(sheetName) {
     var sheet = doc.getSheetByName(sheetName);
     if (sheet && sheet.getLastRow() > 1) {
-      // Đọc 17 cột (Cột Q là Đối tác)
       var range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 17);
       var data = range.getValues();
       
       for (var i = 0; i < data.length; i++) {
         var r = data[i];
-        // Hàm làm sạch dữ liệu: Chuyển undefined/null/"undefined" thành chuỗi rỗng
         var clean = function(val) { 
           if (val === undefined || val === null) return "";
           var s = String(val).trim();
@@ -121,13 +120,18 @@ function doGet(e) {
       if (val) adminPassword = val.toString();
   }
 
-  // 4. Đọc Danh sách Vị trí
+  // 4. Đọc Danh sách Vị trí & Đối tác (Lưu chung sheet CauHinhViTri)
   var sheetLocations = doc.getSheetByName('CauHinhViTri');
   var locations = [];
+  var partners = [];
   if (sheetLocations && sheetLocations.getLastRow() > 0) {
-      var lData = sheetLocations.getRange(1, 1, sheetLocations.getLastRow(), 1).getValues();
+      // Đọc 2 cột đầu tiên (A: Vị trí, B: Đối tác)
+      var lastRow = sheetLocations.getLastRow();
+      var range = sheetLocations.getRange(1, 1, lastRow, 2);
+      var lData = range.getValues();
       for (var i = 0; i < lData.length; i++) {
-         if (lData[i][0]) locations.push(String(lData[i][0]));
+         if (lData[i][0]) locations.push(String(lData[i][0])); // Cột A
+         if (lData[i][1]) partners.push(String(lData[i][1]));  // Cột B
       }
   }
 
@@ -136,7 +140,8 @@ function doGet(e) {
     history: history, 
     products: products,
     settings: { password: adminPassword },
-    locations: locations
+    locations: locations,
+    partners: partners
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -148,7 +153,6 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     var action = data.action;
 
-    // Helper an toàn để tránh ghi undefined vào sheet
     var safeStr = function(val) {
          if (val === undefined || val === null) return "";
          var s = String(val).trim();
@@ -177,7 +181,6 @@ function doPost(e) {
         "'"+partnerVal
       ]);
       
-      // Chỉ cập nhật danh mục nếu là NHẬP và có vị trí hợp lệ
       if (data.type === 'NHẬP' && locVal) {
         updateLocationInSheet(doc, data.sku, locVal);
       }
@@ -244,16 +247,37 @@ function doPost(e) {
       sheet.getRange(1, 1).setValue(data.password);
     }
     else if (action === 'update_locations') {
+      // Cập nhật Vị trí (Cột A)
       var sheet = doc.getSheetByName('CauHinhViTri');
       if (!sheet) { 
          sheet = doc.insertSheet('CauHinhViTri');
          sheet.hideSheet();
       }
-      sheet.clear();
+      // Xóa nội dung cột A (1)
+      var maxRows = sheet.getMaxRows();
+      sheet.getRange(1, 1, maxRows, 1).clearContent(); 
+      
       var locs = data.locations;
       if (locs && locs.length > 0) {
          var rows = locs.map(function(l) { return [l]; });
          sheet.getRange(1, 1, rows.length, 1).setValues(rows);
+      }
+    }
+    else if (action === 'update_partners') {
+      // Cập nhật Đối tác (Cột B)
+      var sheet = doc.getSheetByName('CauHinhViTri'); // Dùng chung sheet
+      if (!sheet) { 
+         sheet = doc.insertSheet('CauHinhViTri');
+         sheet.hideSheet();
+      }
+      // Xóa nội dung cột B (2)
+      var maxRows = sheet.getMaxRows();
+      sheet.getRange(1, 2, maxRows, 1).clearContent();
+      
+      var parts = data.partners;
+      if (parts && parts.length > 0) {
+         var rows = parts.map(function(p) { return [p]; });
+         sheet.getRange(1, 2, rows.length, 1).setValues(rows);
       }
     }
     
@@ -303,7 +327,6 @@ const calculateStockByLocation = (product, history) => {
   return locationMap;
 };
 
-// --- NEW HELPER: Tính tổng nhập của một vật tư ---
 const calculateTotalImport = (product, history) => {
   const itemHistory = history.filter(
     (h) =>
@@ -614,7 +637,7 @@ const NavTabs = ({ activeTab, setActiveTab }) => {
       icon: <LayoutGrid size={20} />,
       color: "purple",
     },
-    // BỎ MODULE LIST TỒN THEO YÊU CẦU
+    // ĐÃ BỎ TAB INVENTORY (LIST TỒN) THEO YÊU CẦU
     {
       id: "catalog",
       label: "Dữ Liệu Hàng",
@@ -639,10 +662,6 @@ const NavTabs = ({ activeTab, setActiveTab }) => {
           } ${
             activeTab === tab.id && tab.id === "output"
               ? "!bg-orange-500 !ring-orange-300"
-              : ""
-          } ${
-            activeTab === tab.id && tab.id === "inventory"
-              ? "!bg-emerald-600 !ring-emerald-300"
               : ""
           } ${
             activeTab === tab.id && tab.id === "catalog"
@@ -697,7 +716,6 @@ const NavTabs = ({ activeTab, setActiveTab }) => {
   );
 };
 
-// --- QR SCANNER MODAL (ĐÃ KHÔI PHỤC CODE GỐC) ---
 const QRScannerModal = ({ onClose, onScan }) => {
   const [errorMsg, setErrorMsg] = useState("");
   const scanProcessed = useRef(false);
@@ -808,7 +826,10 @@ const WarehouseVisualView = ({
   onBatchExport,
   locations,
   onBatchMove,
-  onBatchStockUpdate, // Prop mới
+  onBatchStockUpdate,
+  isAdmin,
+  onAdminLogin, // Prop mới cho nút khóa
+  onAdminLogout, // Prop mới cho nút khóa
 }) => {
   const locationKeys = Object.keys(mapData).sort();
   const [selectedItems, setSelectedItems] = useState([]);
@@ -829,9 +850,13 @@ const WarehouseVisualView = ({
   const [isMoveMode, setIsMoveMode] = useState(false);
   const [moveDestination, setMoveDestination] = useState("");
 
-  // State cho Edit Stock (Sửa tồn kho)
+  // State cho Edit Stock
   const [isEditStockMode, setIsEditStockMode] = useState(false);
-  const [editStockQuantities, setEditStockQuantities] = useState({}); // Stores new qty
+  const [editStockQuantities, setEditStockQuantities] = useState({});
+
+  // State cho modal auth local
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
 
   useEffect(() => {
     setSelectedItems([]);
@@ -872,9 +897,8 @@ const WarehouseVisualView = ({
       );
     } else {
       setSelectedItems([...selectedItems, item]);
-      // Init data for features
       setBatchQuantities((prev) => ({ ...prev, [itemKey]: item.stock }));
-      setEditStockQuantities((prev) => ({ ...prev, [itemKey]: item.stock })); // Init with current stock
+      setEditStockQuantities((prev) => ({ ...prev, [itemKey]: item.stock }));
     }
   };
 
@@ -923,18 +947,80 @@ const WarehouseVisualView = ({
     onSelectLoc(null);
   };
 
-  // Handle Stock Edit Submit
   const handleBatchEditStockSubmit = () => {
-    // Logic: Send items with new quantities to App
     onBatchStockUpdate(selectedItems, selectedLoc.name, editStockQuantities);
     onSelectLoc(null);
   };
 
+  // Auth Handlers
+  const handleLockClick = () => {
+    if (isAdmin) {
+      if (confirm("Thoát chế độ Admin?")) onAdminLogout();
+    } else {
+      setShowAuthModal(true);
+    }
+  };
+
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    if (onAdminLogin(passwordInput)) {
+      setShowAuthModal(false);
+      setPasswordInput("");
+    }
+  };
+
   return (
-    <div className="bg-white rounded-xl shadow-md p-4 min-h-[600px] flex flex-col">
+    <div className="bg-white rounded-xl shadow-md p-4 min-h-[600px] flex flex-col relative">
+      {/* Auth Modal Local */}
+      {showAuthModal && (
+        <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center rounded-xl p-4">
+          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <Lock size={20} className="text-indigo-600" /> Nhập Mật Mã Admin
+            </h3>
+            <form onSubmit={handleLoginSubmit}>
+              <input
+                type="password"
+                autoFocus
+                className="w-full p-3 border rounded mb-4 text-base"
+                placeholder="Mật mã..."
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowAuthModal(false)}
+                  className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold"
+                >
+                  Mở Khóa
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
         <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2">
           <MapPin className="text-purple-600" /> Sơ Đồ & Vị Trí Kho
+          {/* NÚT KHÓA/MỞ KHÓA ADMIN */}
+          <button
+            onClick={handleLockClick}
+            className={`ml-2 p-1.5 rounded-full shadow-sm transition-all ${
+              isAdmin
+                ? "bg-red-100 text-red-600 hover:bg-red-200"
+                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+            }`}
+          >
+            {isAdmin ? <Unlock size={16} /> : <Lock size={16} />}
+          </button>
         </h2>
         {/* BỘ LỌC CHO SƠ ĐỒ KHO */}
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
@@ -1026,65 +1112,80 @@ const WarehouseVisualView = ({
       {selectedLoc && (
         <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
-            <div className="p-4 bg-emerald-600 text-white flex justify-between items-center shadow-md z-10">
-              <div className="flex items-center gap-3">
-                <div className="bg-white/20 p-2 rounded-lg">
-                  <MapPin size={24} />
+            <div className="p-4 bg-emerald-600 text-white shadow-md z-10 flex flex-col gap-4">
+              {/* Title + Mobile Close */}
+              <div className="flex justify-between items-center w-full">
+                <div className="flex items-center gap-3">
+                  <div className="bg-white/20 p-2 rounded-lg">
+                    <MapPin size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold">
+                      {selectedLoc.name || "Vị trí chưa xác định"}
+                    </h3>
+                    <p className="text-emerald-100 text-xs">
+                      Tổng: {selectedLoc.items.reduce((s, i) => s + i.stock, 0)}{" "}
+                      sản phẩm
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold">
-                    {selectedLoc.name || "Vị trí chưa xác định"}
-                  </h3>
-                  <p className="text-emerald-100 text-xs">
-                    Tổng: {selectedLoc.items.reduce((s, i) => s + i.stock, 0)}{" "}
-                    sản phẩm
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* NÚT CHUYỂN VỊ TRÍ */}
-                {selectedItems.length > 0 &&
-                  !isBatchMode &&
-                  !isMoveMode &&
-                  !isEditStockMode && (
-                    <button
-                      onClick={() => setIsMoveMode(true)}
-                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-2 text-sm animate-bounce"
-                    >
-                      <MoveRight size={16} /> Chuyển ({selectedItems.length})
-                      mục
-                    </button>
-                  )}
-
-                {/* NÚT SỬA TỒN KHO (MỚI) */}
-                {selectedItems.length > 0 &&
-                  !isBatchMode &&
-                  !isMoveMode &&
-                  !isEditStockMode && (
-                    <button
-                      onClick={() => setIsEditStockMode(true)}
-                      className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-2 text-sm animate-bounce"
-                    >
-                      <Edit3 size={16} /> Sửa tồn ({selectedItems.length})
-                    </button>
-                  )}
-
-                {/* NÚT XUẤT */}
-                {selectedItems.length > 0 &&
-                  !isBatchMode &&
-                  !isMoveMode &&
-                  !isEditStockMode && (
-                    <button
-                      onClick={() => setIsBatchMode(true)}
-                      className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-2 text-sm animate-bounce"
-                    >
-                      <LogOut size={16} /> Xuất ({selectedItems.length}) mục
-                    </button>
-                  )}
-
+                {/* Mobile Close Button */}
                 <button
                   onClick={() => onSelectLoc(null)}
-                  className="p-2 hover:bg-white/20 rounded-full transition-colors"
+                  className="p-2 hover:bg-white/20 rounded-full transition-colors md:hidden"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* Buttons */}
+              <div className="w-full flex items-center gap-2">
+                <div className="grid grid-cols-3 gap-2 w-full">
+                  {/* NÚT CHUYỂN VỊ TRÍ - Only for Admin */}
+                  {selectedItems.length > 0 &&
+                    !isBatchMode &&
+                    !isMoveMode &&
+                    !isEditStockMode &&
+                    isAdmin && (
+                      <button
+                        onClick={() => setIsMoveMode(true)}
+                        className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-2 rounded font-bold flex flex-col sm:flex-row items-center justify-center gap-1 text-xs sm:text-sm animate-bounce w-full h-full"
+                      >
+                        <MoveRight size={18} /> <span>Chuyển</span>
+                      </button>
+                    )}
+
+                  {/* NÚT SỬA TỒN KHO (MỚI) - Only for Admin */}
+                  {selectedItems.length > 0 &&
+                    !isBatchMode &&
+                    !isMoveMode &&
+                    !isEditStockMode &&
+                    isAdmin && (
+                      <button
+                        onClick={() => setIsEditStockMode(true)}
+                        className="bg-purple-500 hover:bg-purple-600 text-white px-2 py-2 rounded font-bold flex flex-col sm:flex-row items-center justify-center gap-1 text-xs sm:text-sm animate-bounce w-full h-full"
+                      >
+                        <Edit3 size={18} /> <span>Sửa tồn</span>
+                      </button>
+                    )}
+
+                  {/* NÚT XUẤT - Show for all users (No isAdmin check) */}
+                  {selectedItems.length > 0 &&
+                    !isBatchMode &&
+                    !isMoveMode &&
+                    !isEditStockMode && (
+                      <button
+                        onClick={() => setIsBatchMode(true)}
+                        className="bg-orange-500 hover:bg-orange-600 text-white px-2 py-2 rounded font-bold flex flex-col sm:flex-row items-center justify-center gap-1 text-xs sm:text-sm animate-bounce w-full h-full"
+                      >
+                        <LogOut size={18} /> <span>Xuất</span>
+                      </button>
+                    )}
+                </div>
+                {/* Desktop Close Button - hidden on mobile as it's already in title bar */}
+                <button
+                  onClick={() => onSelectLoc(null)}
+                  className="p-2 hover:bg-white/20 rounded-full transition-colors hidden md:block"
                 >
                   <X size={24} />
                 </button>
@@ -1111,7 +1212,7 @@ const WarehouseVisualView = ({
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">
-                        Người nhận / Chuyền
+                        Nhóm
                       </label>
                       <select
                         value={batchPartner}
@@ -1143,7 +1244,7 @@ const WarehouseVisualView = ({
                             <td className="p-2">
                               <div className="font-bold">{item.style}</div>
                               <div className="text-xs text-gray-500">
-                                PO: {item.po} | {item.color} | {item.size}
+                                {item.sku} | {item.color} | {item.size}
                               </div>
                             </td>
                             <td className="p-2 text-right font-medium">
@@ -1402,9 +1503,8 @@ const WarehouseVisualView = ({
   );
 };
 
-// ... (CatalogView, HistoryView, SettingsHelpView, InventoryView is removed) ...
+// ... (CatalogView, HistoryView) ...
 
-// --- CatalogView (Giữ nguyên) ---
 const CatalogView = ({
   products,
   onAddProduct,
@@ -1800,6 +1900,7 @@ const TransactionView = ({
       );
       return;
     }
+    // ĐÃ BỎ CẢNH BÁO NC THÙNG
     processSubmit();
   };
 
@@ -1989,6 +2090,7 @@ const TransactionView = ({
               {/* CẢI TIẾN 2: THÊM DÒNG +/- KH (NEW LOGIC) */}
               <div className="text-xs font-mono text-white mt-1">
                 +/- KH: <strong>{planDifference}</strong>
+                {planDifference !== "-" && planDifference < 0 && " (Vượt)"}
               </div>
             </div>
 
@@ -2024,11 +2126,7 @@ const TransactionView = ({
             </div>
 
             <ConfigurableSelect
-              label={
-                activeTab === "input"
-                  ? "Vị trí / Kệ (Nhập vào)"
-                  : "Xuất từ Vị trí (Kệ/Line)"
-              }
+              label={activeTab === "input" ? "Vị trí  " : "Xuất từ Vị trí "}
               value={form.locationOrReceiver}
               onChange={(val) => setForm({ ...form, locationOrReceiver: val })}
               options={locations}
@@ -2043,7 +2141,7 @@ const TransactionView = ({
             {/* Chỉ hiện ô Đối tác khi là XUẤT KHO */}
             {activeTab === "output" && (
               <ConfigurableSelect
-                label="Người Nhận / Chuyền"
+                label="Nhóm"
                 value={form.partner}
                 onChange={(val) => setForm({ ...form, partner: val })}
                 options={partners}
@@ -2054,9 +2152,7 @@ const TransactionView = ({
             )}
 
             <div>
-              <label className="block text-sm font-medium mb-1">
-                Ghi chú thêm
-              </label>
+              <label className="block text-sm font-medium mb-1">Ghi chú</label>
               <input
                 type="text"
                 value={form.note}
@@ -2089,7 +2185,6 @@ const TransactionView = ({
   );
 };
 
-// --- HistoryView (Giữ nguyên) ---
 const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => (
   <div className="bg-white rounded-xl shadow-md p-6">
     <h2 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2">
@@ -2157,7 +2252,6 @@ const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => (
   </div>
 );
 
-// --- SettingsHelpView (Giữ nguyên) ---
 const SettingsHelpView = ({
   activeTab,
   scriptUrl,
@@ -2167,11 +2261,14 @@ const SettingsHelpView = ({
   currentPassword,
   locations,
   onLocationsChange,
+  partners, // Prop mới
+  onPartnersChange, // Prop mới
 }) => {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [newLocationInput, setNewLocationInput] = useState("");
+  const [newPartnerInput, setNewPartnerInput] = useState(""); // State cho đối tác mới
 
   const handleChangePassword = () => {
     if (oldPassword !== currentPassword) {
@@ -2206,6 +2303,24 @@ const SettingsHelpView = ({
   const handleRemoveLocation = (locToRemove) => {
     if (confirm(`Xóa vị trí "${locToRemove}"?`)) {
       onLocationsChange(locations.filter((l) => l !== locToRemove));
+    }
+  };
+
+  // --- LOGIC MỚI CHO ĐỐI TÁC ---
+  const handleAddPartner = () => {
+    if (!newPartnerInput.trim()) return;
+    if (partners.includes(newPartnerInput.trim())) {
+      showNotification("error", "Đối tác này đã tồn tại!");
+      return;
+    }
+    onPartnersChange([...partners, newPartnerInput.trim()]);
+    setNewPartnerInput("");
+    showNotification("success", "Đã thêm đối tác mới!");
+  };
+
+  const handleRemovePartner = (pToRemove) => {
+    if (confirm(`Xóa đối tác "${pToRemove}"?`)) {
+      onPartnersChange(partners.filter((p) => p !== pToRemove));
     }
   };
 
@@ -2285,6 +2400,55 @@ const SettingsHelpView = ({
 
           <hr className="my-6 border-gray-200" />
 
+          {/* --- QUẢN LÝ ĐỐI TÁC (MỚI) --- */}
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Users className="text-blue-600" /> Quản lý Nhóm Nhận / Đối Tác
+          </h2>
+          <div className="bg-blue-50 p-4 rounded-lg mb-6">
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                className="flex-1 p-2 border border-blue-200 rounded text-base outline-none focus:border-blue-500"
+                placeholder="Nhập tên đối tác mới (VD: Chuyền 5)..."
+                value={newPartnerInput}
+                onChange={(e) => setNewPartnerInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddPartner()}
+              />
+              <button
+                onClick={handleAddPartner}
+                className="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700"
+              >
+                Thêm
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {partners.length === 0 && (
+                <span className="text-gray-400 text-sm italic">
+                  Chưa có đối tác nào.
+                </span>
+              )}
+              {partners.map((p, idx) => (
+                <span
+                  key={idx}
+                  className="bg-white text-blue-800 px-3 py-1 rounded-full shadow-sm border border-blue-100 flex items-center gap-2 font-medium"
+                >
+                  {p}
+                  <button
+                    onClick={() => handleRemovePartner(p)}
+                    className="text-gray-400 hover:text-red-500 p-0.5 rounded-full"
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2 italic">
+              * Danh sách này sẽ được đồng bộ lên Google Sheet.
+            </p>
+          </div>
+
+          <hr className="my-6 border-gray-200" />
+
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <KeyRound className="text-indigo-600" /> Cài đặt mật mã Admin
           </h2>
@@ -2325,11 +2489,11 @@ const SettingsHelpView = ({
       ) : (
         <>
           <h2 className="text-xl font-bold mb-4 text-blue-600">
-            CẬP NHẬT MÃ SCRIPT MỚI (V3.2 - FIX LỖI GHI VỊ TRÍ)
+            CẬP NHẬT MÃ SCRIPT MỚI (V3.8 - FINAL)
           </h2>
           <p className="mb-2 text-sm text-red-500 font-bold">
-            QUAN TRỌNG: Bạn CẦN cập nhật mã này để fix lỗi ghi đè undefined vào
-            vị trí.
+            QUAN TRỌNG: Bạn CẦN cập nhật mã này để kích hoạt tính năng lưu Đối
+            tác lên Sheet.
           </p>
           <div className="bg-gray-900 text-gray-100 p-4 rounded text-xs overflow-x-auto relative">
             <button
@@ -2429,7 +2593,7 @@ export default function App() {
 
   const isOnline = useNetworkStatus(showNotification);
 
-  // --- LOGIC TÍNH TOÁN SƠ ĐỒ KHO ---
+  // --- LOGIC TÍNH TOÁN SƠ ĐỒ KHO (Moved from Child to Parent) ---
   const mapData = useMemo(() => {
     const data = {};
     // 1. Khởi tạo các vị trí
@@ -2437,7 +2601,7 @@ export default function App() {
       data[loc] = [];
     });
 
-    // --- FIX: KHỬ TRÙNG LẶP SẢN PHẨM TRƯỚC KHI TÍNH TOÁN ---
+    // --- FIX: KHỬ TRÙNG LẶP SẢN PHẨM TRƯỚC KHI TÍNH TOÁN (Tránh lỗi x2 trên Map) ---
     const processedKeys = new Set();
     const uniqueProducts = [];
 
@@ -2450,8 +2614,9 @@ export default function App() {
         uniqueProducts.push(p);
       }
     });
+    // -------------------------------------------------------------------------------
 
-    // 2. Quét qua từng sản phẩm để tính tồn kho và +/- KH
+    // 2. Quét qua từng sản phẩm (đã lọc trùng) để tính tồn kho tại các vị trí
     uniqueProducts.forEach((p) => {
       const stockByLoc = calculateStockByLocation(p, history);
 
@@ -2474,28 +2639,42 @@ export default function App() {
     return data;
   }, [products, history, locations]);
 
-  // --- LOGIC XỬ LÝ SCAN QR ---
+  // --- LOGIC XỬ LÝ SCAN QR (UPDATED) ---
   const handleScan = (code) => {
     if (code) {
+      // 1. QUAN TRỌNG: Đóng scanner ngay lập tức để tránh loop
       setShowScanner(false);
 
       if (code.text && code.text.toLowerCase().startsWith("khovo:")) {
+        // Handle object input from mock scanner
         code = code.text;
       }
 
       if (typeof code === "string" && code.toLowerCase().startsWith("khovo:")) {
-        const locName = code.substring(6).trim();
+        // Lấy tên vị trí sau tiền tố
+        const locName = code.substring(6).trim(); // "khovo:".length === 6
+
         if (locations.includes(locName)) {
+          // 2. Chuyển tab sang map
           setActiveTab("map");
+          // 3. Set vị trí đang chọn để mở modal
           const items = mapData[locName] || [];
           setSelectedLoc({ name: locName, items });
+
           showNotification("success", `Đã tìm thấy vị trí: ${locName}`);
         } else {
+          // Nếu có tiền tố đúng nhưng tên vị trí không tồn tại -> Báo lỗi và đã tắt scanner
           showNotification(
             "error",
             `Vị trí "${locName}" chưa được khai báo trong hệ thống!`
           );
         }
+      } else {
+        // Nếu mã không đúng định dạng (không có khovo:) -> Báo lỗi và đã tắt scanner
+        // showNotification(
+        //   "error",
+        //   "Mã QR không hợp lệ (Phải bắt đầu bằng 'khovo:')"
+        // );
       }
     }
   };
@@ -2503,15 +2682,22 @@ export default function App() {
   const handleLocationsChange = async (newLocs) => {
     setLocations(newLocs);
     localStorage.setItem("warehouseLocations", JSON.stringify(newLocs));
+
+    // --- GỬI DANH SÁCH MỚI LÊN SHEET ---
     await postToSheet({
       action: "update_locations",
       locations: newLocs,
     });
   };
 
-  const handlePartnersChange = (newPartners) => {
+  // MỚI: Xử lý thay đổi đối tác (gửi lên Sheet)
+  const handlePartnersChange = async (newPartners) => {
     setPartners(newPartners);
     localStorage.setItem("warehousePartners", JSON.stringify(newPartners));
+    await postToSheet({
+      action: "update_partners",
+      partners: newPartners,
+    });
   };
 
   // ... (Các hàm Auth giữ nguyên) ...
@@ -2534,7 +2720,7 @@ export default function App() {
       action: "update_password",
       password: newPass,
     });
-    if (success) showNotification("success", "Đã lưu mật mã mới!");
+    if (success) showNotification("success", "Đã lưu mật mã mới lên hệ thống!");
     else showNotification("warning", "Lỗi đồng bộ mật mã.");
   };
 
@@ -2588,6 +2774,19 @@ export default function App() {
           localStorage.setItem(
             "warehouseLocations",
             JSON.stringify(data.locations)
+          );
+        }
+
+        // MỚI: Đồng bộ đối tác
+        if (
+          data.partners &&
+          Array.isArray(data.partners) &&
+          data.partners.length > 0
+        ) {
+          setPartners(data.partners);
+          localStorage.setItem(
+            "warehousePartners",
+            JSON.stringify(data.partners)
           );
         }
 
@@ -2730,18 +2929,23 @@ export default function App() {
     });
     setHistory(updatedHistory);
     localStorage.setItem("warehouseHistory", JSON.stringify(updatedHistory));
-    // showNotification("info", "Đang cập nhật vị trí trên Sheet...");
-    await postToSheet({
+
+    showNotification("info", "Đang cập nhật vị trí trên Sheet...");
+
+    const success = await postToSheet({
       action: "update_location_history",
       ...itemToUpdate,
       oldLocation: oldLoc,
       newLocation: newLoc,
     });
-    // if (success) showNotification("success", "Đã cập nhật vị trí thành công!");
+
+    if (success) showNotification("success", "Đã cập nhật vị trí thành công!");
   };
 
   const handleTransaction = async (selectedProduct, formData) => {
     setLoading(true);
+
+    // UPDATE V2.8: Không gộp partner vào note nữa, gửi tách riêng
     const dataToSend = {
       action: "transaction",
       date: formData.date,
@@ -2758,6 +2962,7 @@ export default function App() {
       cartonSize: selectedProduct.cartonSize,
       cartonNC: selectedProduct.cartonNC,
       quantity: formData.quantity,
+      // Fix V3.0: Luôn đảm bảo locationOrReceiver không phải undefined
       locationOrReceiver: formData.locationOrReceiver || "",
       note: formData.note || "",
       partner: formData.partner || "",
@@ -2769,32 +2974,20 @@ export default function App() {
       setHistory(newHistory);
       localStorage.setItem("warehouseHistory", JSON.stringify(newHistory));
       if (activeTab === "input" && formData.locationOrReceiver) {
-        // Cập nhật vị trí hiển thị ngay lập tức (optimistic UI)
-        const updatedProducts = products.map((p) => {
-          if (
-            p.sku === selectedProduct.sku &&
-            p.po === selectedProduct.po &&
-            p.size === selectedProduct.size
-          ) {
-            return { ...p, location: formData.locationOrReceiver };
-          }
-          return p;
-        });
-        setProducts(updatedProducts);
-        localStorage.setItem(
-          "warehouseProducts",
-          JSON.stringify(updatedProducts)
-        );
+        handleUpdateLocation(selectedProduct, formData.locationOrReceiver);
       }
       showNotification("success", "Thành công!");
     }
   };
 
+  // --- NEW: Handle Batch Export ---
   const handleBatchTransaction = async (items, location, partner, date) => {
     setLoading(true);
     const newTransactions = [];
     let successCount = 0;
+
     for (const item of items) {
+      // UPDATE V2.8: Không tự động điền "Xuất nhanh..." vào note, để trống note.
       const dataToSend = {
         action: "transaction",
         date: date,
@@ -2811,16 +3004,19 @@ export default function App() {
         cartonSize: item.cartonSize,
         cartonNC: item.cartonNC,
         quantity: item.exportQty,
-        locationOrReceiver: location || "",
-        note: "",
-        partner: partner || "",
+        locationOrReceiver: location || "", // Xuất từ vị trí này (Fix undefined)
+        note: "", // YÊU CẦU: Để trống ghi chú
+        partner: partner || "", // YÊU CẦU: Tách riêng cột nhóm (đối tác)
       };
+
+      // Gửi từng request để đảm bảo an toàn dữ liệu
       const success = await postToSheet(dataToSend);
       if (success) {
         newTransactions.push(dataToSend);
         successCount++;
       }
     }
+
     setLoading(false);
     if (newTransactions.length > 0) {
       const updatedHistory = [...newTransactions, ...history];
@@ -2934,9 +3130,11 @@ export default function App() {
     setLoading(false);
   };
 
+  // --- NEW: Handle Navigate to Export Tab ---
   const handleNavigateExport = (item, location) => {
     setPrefillExportData({ item, location });
     setActiveTab("output");
+    // Reset prefill data sau khi đã switch tab (useEffect trong TransactionView sẽ bắt)
     setTimeout(() => setPrefillExportData(null), 500);
   };
 
@@ -2953,10 +3151,11 @@ export default function App() {
         isSyncing={isSyncing}
         syncStatus={syncStatus}
         isAdmin={isAdmin}
-        onToggleScanner={() => setShowScanner(true)}
+        onToggleScanner={() => setShowScanner(true)} // Toggle Scanner Modal
       />
       <NotificationToast notification={notification} />
 
+      {/* SCANNER MODAL */}
       {showScanner && (
         <QRScannerModal
           onClose={() => setShowScanner(false)}
@@ -2987,8 +3186,8 @@ export default function App() {
             partners={partners}
             onLocationsChange={handleLocationsChange}
             onPartnersChange={handlePartnersChange}
-            prefillData={prefillExportData}
-            onClearPrefill={handleClearPrefill}
+            prefillData={prefillExportData} // Pass prefill data
+            onClearPrefill={handleClearPrefill} // Pass clearer
           />
         )}
 
@@ -2996,17 +3195,22 @@ export default function App() {
 
         {activeTab === "map" && (
           <WarehouseVisualView
+            // Truyền props từ App xuống thay vì tính toán bên trong
             mapData={mapData}
             selectedLoc={selectedLoc}
             onSelectLoc={setSelectedLoc}
-            onNavigateExport={handleNavigateExport}
-            partners={partners}
-            onBatchExport={handleBatchTransaction}
+            onNavigateExport={handleNavigateExport} // New prop for jumping to export
+            partners={partners} // For batch export modal
+            onBatchExport={handleBatchTransaction} // For batch export logic
             // Props mới cho chuyển kho
             locations={locations}
             onBatchMove={handleBatchMoveLocation}
             // Prop mới cho sửa tồn kho
             onBatchStockUpdate={handleBatchStockUpdate}
+            // Add isAdmin/Auth props here
+            isAdmin={isAdmin}
+            onAdminLogin={handleAdminLogin}
+            onAdminLogout={handleAdminLogout}
           />
         )}
         {activeTab === "history" && (
@@ -3026,6 +3230,8 @@ export default function App() {
             currentPassword={adminPassword}
             locations={locations}
             onLocationsChange={handleLocationsChange}
+            partners={partners}
+            onPartnersChange={handlePartnersChange}
           />
         )}
       </main>
