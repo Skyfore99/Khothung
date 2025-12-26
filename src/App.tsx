@@ -26,7 +26,7 @@ import {
   Package,
   ClipboardPaste,
   MapPin,
-  Edit3,
+  Edit3, // Dùng icon này cho nút sửa
   RefreshCw,
   Filter,
   X,
@@ -43,12 +43,13 @@ import {
   Square,
   Camera,
   RefreshCcw,
+  AlertTriangle,
+  MoveRight, // Icon cho chuyển kho
 } from "lucide-react";
 
-// @ts-ignore
 import QrScanner from "react-qr-scanner";
 
-// --- MÃ SCRIPT GOOGLE SHEET (GIỮ NGUYÊN V2.7) ---
+// --- MÃ SCRIPT GOOGLE SHEET (GIỮ NGUYÊN V3.2) ---
 const SCRIPT_CODE = `
 function doGet(e) {
   var doc = SpreadsheetApp.getActiveSpreadsheet();
@@ -58,10 +59,20 @@ function doGet(e) {
   function readFromSheet(sheetName) {
     var sheet = doc.getSheetByName(sheetName);
     if (sheet && sheet.getLastRow() > 1) {
-      var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 16).getValues();
+      // Đọc 17 cột (Cột Q là Đối tác)
+      var range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 17);
+      var data = range.getValues();
+      
       for (var i = 0; i < data.length; i++) {
         var r = data[i];
-        var clean = function(val) { return String(val).startsWith("'") ? String(val).substring(1) : String(val); };
+        // Hàm làm sạch dữ liệu: Chuyển undefined/null/"undefined" thành chuỗi rỗng
+        var clean = function(val) { 
+          if (val === undefined || val === null) return "";
+          var s = String(val).trim();
+          if (s === "undefined" || s === "null") return "";
+          return s.startsWith("'") ? s.substring(1) : s; 
+        };
+
         var dateVal = r[0];
         if (dateVal instanceof Date) { dateVal = Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "yyyy-MM-dd"); } 
         else { dateVal = clean(dateVal); }
@@ -70,7 +81,9 @@ function doGet(e) {
           date: dateVal, type: r[1], sku: clean(r[2]), style: clean(r[3]), color: clean(r[4]), 
           unit: clean(r[5]), po: clean(r[6]), shipdate: clean(r[7]), poQty: r[8], size: clean(r[9]), 
           masterBoxQty: r[10], cartonSize: r[11], cartonNC: r[12], quantity: r[13], 
-          locationOrReceiver: clean(r[14]), note: clean(r[15])
+          locationOrReceiver: clean(r[14]), 
+          note: clean(r[15]),
+          partner: r[16] ? clean(r[16]) : "" 
         });
       }
     }
@@ -86,7 +99,12 @@ function doGet(e) {
     var pData = sheetProducts.getRange(2, 1, sheetProducts.getLastRow() - 1, 12).getValues();
     for (var i = 0; i < pData.length; i++) {
       var r = pData[i];
-      var clean = function(val) { return String(val).startsWith("'") ? String(val).substring(1) : String(val); };
+      var clean = function(val) { 
+          if (val === undefined || val === null) return "";
+          var s = String(val).trim();
+          if (s === "undefined" || s === "null") return "";
+          return s.startsWith("'") ? s.substring(1) : s; 
+      };
       products.push({
         sku: clean(r[0]), style: clean(r[1]), color: clean(r[2]), unit: clean(r[3]), 
         po: clean(r[4]), shipdate: clean(r[5]), poQty: r[6], size: clean(r[7]), 
@@ -97,7 +115,7 @@ function doGet(e) {
 
   // 3. Đọc Cấu hình (Mật khẩu Admin)
   var sheetConfig = doc.getSheetByName('CauHinh');
-  var adminPassword = "123456"; // Mặc định
+  var adminPassword = "123456"; 
   if (sheetConfig) {
       var val = sheetConfig.getRange(1, 1).getValue();
       if (val) adminPassword = val.toString();
@@ -130,20 +148,38 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     var action = data.action;
 
+    // Helper an toàn để tránh ghi undefined vào sheet
+    var safeStr = function(val) {
+         if (val === undefined || val === null) return "";
+         var s = String(val).trim();
+         if (s === "undefined" || s === "null") return "";
+         return s;
+    };
+
     if (action === 'transaction') {
       var sheetName = data.type === 'NHẬP' ? 'NhapKho' : 'XuatKho';
       var sheet = doc.getSheetByName(sheetName);
       if (!sheet) {
         sheet = doc.insertSheet(sheetName);
-        sheet.appendRow(['Ngày', 'Loại', 'Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'PO Qty', 'Size', 'M.Box', 'KT Thùng', 'NC Thùng', 'SL', 'Vị trí/Nhóm', 'Ghi chú']);
+        sheet.appendRow(['Ngày', 'Loại', 'Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'PO Qty', 'Size', 'M.Box', 'KT Thùng', 'NC Thùng', 'SL', 'Vị trí/Nhóm', 'Ghi chú', 'Đối tác']);
       }
+      
+      var locVal = safeStr(data.locationOrReceiver);
+      var noteVal = safeStr(data.note);
+      var partnerVal = safeStr(data.partner);
+
       sheet.appendRow([
         data.date, data.type, "'"+data.sku, "'"+data.style, "'"+data.color, "'"+data.unit, 
         "'"+data.po, "'"+data.shipdate, "'"+data.poQty, "'"+data.size, "'"+data.masterBoxQty, 
-        "'"+data.cartonSize, "'"+data.cartonNC, data.quantity, "'"+data.locationOrReceiver, "'"+data.note
+        "'"+data.cartonSize, "'"+data.cartonNC, data.quantity, 
+        "'"+locVal, 
+        "'"+noteVal,
+        "'"+partnerVal
       ]);
-      if (data.type === 'NHẬP' && data.locationOrReceiver) {
-        updateLocationInSheet(doc, data.sku, data.locationOrReceiver);
+      
+      // Chỉ cập nhật danh mục nếu là NHẬP và có vị trí hợp lệ
+      if (data.type === 'NHẬP' && locVal) {
+        updateLocationInSheet(doc, data.sku, locVal);
       }
     }
     else if (action === 'add_product' || action === 'bulk_add_products') {
@@ -230,6 +266,7 @@ function doPost(e) {
 }
 
 function updateLocationInSheet(doc, sku, newLoc) {
+  if (!newLoc || newLoc === "undefined" || newLoc === "null") return;
   var sheet = doc.getSheetByName('DanhMuc');
   if (sheet) {
     var found = sheet.createTextFinder(sku).matchEntireCell(true).findNext();
@@ -253,7 +290,8 @@ const calculateStockByLocation = (product, history) => {
   );
   const locationMap = {};
   itemHistory.forEach((h) => {
-    const loc = h.locationOrReceiver || "Chưa set";
+    let loc = h.locationOrReceiver;
+    if (!loc || loc === "undefined" || loc === "null") loc = "Chưa set";
     if (!locationMap[loc]) locationMap[loc] = 0;
     const qty = parseInt(h.quantity) || 0;
     if (h.type === "NHẬP") {
@@ -263,6 +301,20 @@ const calculateStockByLocation = (product, history) => {
     }
   });
   return locationMap;
+};
+
+// --- NEW HELPER: Tính tổng nhập của một vật tư ---
+const calculateTotalImport = (product, history) => {
+  const itemHistory = history.filter(
+    (h) =>
+      h.type === "NHẬP" &&
+      normalize(h.sku) === normalize(product.sku) &&
+      normalize(h.style) === normalize(product.style) &&
+      normalize(h.color) === normalize(product.color) &&
+      normalize(h.size) === normalize(product.size) &&
+      normalize(h.po) === normalize(product.po)
+  );
+  return itemHistory.reduce((sum, h) => sum + (parseInt(h.quantity) || 0), 0);
 };
 
 const formatDateDisplay = (dateString) => {
@@ -354,9 +406,11 @@ const ConfigurableSelect = ({
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <label className="block text-sm font-medium mb-1 text-gray-700">
-        {label}
-      </label>
+      {label && (
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          {label}
+        </label>
+      )}
       <div className="relative w-full">
         <input
           type="text"
@@ -560,12 +614,7 @@ const NavTabs = ({ activeTab, setActiveTab }) => {
       icon: <LayoutGrid size={20} />,
       color: "purple",
     },
-    {
-      id: "inventory",
-      label: "List Tồn",
-      icon: <Package size={20} />,
-      color: "emerald",
-    },
+    // BỎ MODULE LIST TỒN THEO YÊU CẦU
     {
       id: "catalog",
       label: "Dữ Liệu Hàng",
@@ -648,6 +697,107 @@ const NavTabs = ({ activeTab, setActiveTab }) => {
   );
 };
 
+// --- QR SCANNER MODAL (ĐÃ KHÔI PHỤC CODE GỐC) ---
+const QRScannerModal = ({ onClose, onScan }) => {
+  const [errorMsg, setErrorMsg] = useState("");
+  const scanProcessed = useRef(false);
+  const [key, setKey] = useState(0);
+
+  const handleResult = (data) => {
+    if (data) {
+      if (scanProcessed.current) return;
+
+      const code = data?.text || data;
+      if (code) {
+        scanProcessed.current = true;
+        onScan(code);
+      }
+    }
+  };
+
+  const handleError = (err) => {
+    if (
+      err &&
+      (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")
+    ) {
+      setErrorMsg(
+        "Quyền truy cập Camera bị từ chối. Vui lòng cấp quyền và thử lại."
+      );
+    } else {
+      setErrorMsg("Lỗi Camera: " + (err.message || "Không xác định"));
+    }
+  };
+
+  const requestCameraPermission = async () => {
+    try {
+      await navigator.mediaDevices.getUserMedia({ video: true });
+      setErrorMsg("");
+      setKey((prev) => prev + 1);
+    } catch (err) {
+      handleError(err);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col animate-fade-in">
+      <div className="bg-slate-900 p-4 flex justify-between items-center text-white">
+        <h2 className="font-bold flex items-center gap-2">
+          <Scan className="text-indigo-400" /> Quét Mã Vị Trí
+        </h2>
+        <button
+          onClick={onClose}
+          className="p-2 bg-white/10 rounded-full hover:bg-white/20"
+        >
+          <X size={24} />
+        </button>
+      </div>
+
+      <div className="flex-1 bg-black relative flex items-center justify-center overflow-hidden">
+        <div className="w-full h-full max-w-md mx-auto relative bg-black rounded-lg overflow-hidden flex items-center justify-center">
+          {!errorMsg ? (
+            <>
+              <QrScanner
+                key={key}
+                delay={300}
+                onError={handleError}
+                onScan={handleResult}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                constraints={{
+                  video: { facingMode: "environment" },
+                }}
+              />
+
+              <div className="absolute inset-0 border-2 border-indigo-500/50 flex items-center justify-center pointer-events-none">
+                <div className="w-64 h-64 border-2 border-indigo-400 rounded-lg relative">
+                  <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-indigo-400 -mt-1 -ml-1"></div>
+                  <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-indigo-400 -mt-1 -mr-1"></div>
+                  <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-indigo-400 -mb-1 -ml-1"></div>
+                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-indigo-400 -mb-1 -mr-1"></div>
+                  <div className="absolute top-0 left-0 w-full h-0.5 bg-indigo-400 shadow-[0_0_10px_#818cf8] animate-[scan_2s_infinite]"></div>
+                </div>
+              </div>
+              <div className="absolute bottom-10 w-full text-center text-white/80 text-sm">
+                Đưa mã QR vị trí vào khung hình
+              </div>
+            </>
+          ) : (
+            <div className="text-center p-6 text-white bg-gray-900 rounded-lg m-4 shadow-xl border border-gray-700">
+              <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
+              <p className="mb-6 text-lg">{errorMsg}</p>
+              <button
+                onClick={requestCameraPermission}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 mx-auto shadow-lg transition-transform active:scale-95"
+              >
+                <Camera size={20} /> Cấp quyền Camera
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- WAREHOUSE VISUAL VIEW (Sơ đồ kho) ---
 const WarehouseVisualView = ({
   mapData,
@@ -656,9 +806,19 @@ const WarehouseVisualView = ({
   onNavigateExport,
   partners,
   onBatchExport,
+  locations,
+  onBatchMove,
+  onBatchStockUpdate, // Prop mới
 }) => {
   const locationKeys = Object.keys(mapData).sort();
   const [selectedItems, setSelectedItems] = useState([]);
+
+  // State filters cho sơ đồ kho
+  const [styleFilter, setStyleFilter] = useState("");
+  const [colorFilter, setColorFilter] = useState("");
+  const [poFilter, setPoFilter] = useState("");
+
+  // State cho Batch Export & Move
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [batchQuantities, setBatchQuantities] = useState({});
   const [batchPartner, setBatchPartner] = useState("");
@@ -666,12 +826,43 @@ const WarehouseVisualView = ({
     new Date().toISOString().split("T")[0]
   );
 
-  // Reset selected items when modal opens/closes
+  const [isMoveMode, setIsMoveMode] = useState(false);
+  const [moveDestination, setMoveDestination] = useState("");
+
+  // State cho Edit Stock (Sửa tồn kho)
+  const [isEditStockMode, setIsEditStockMode] = useState(false);
+  const [editStockQuantities, setEditStockQuantities] = useState({}); // Stores new qty
+
   useEffect(() => {
     setSelectedItems([]);
     setIsBatchMode(false);
+    setIsMoveMode(false);
+    setIsEditStockMode(false);
     setBatchQuantities({});
+    setEditStockQuantities({});
+    setMoveDestination("");
   }, [selectedLoc]);
+
+  // Lọc mapData dựa trên filter
+  const filteredMapData = useMemo(() => {
+    if (!styleFilter && !colorFilter && !poFilter) return mapData;
+    const newData = {};
+    Object.keys(mapData).forEach((loc) => {
+      const items = mapData[loc].filter((item) => {
+        const matchStyle =
+          !styleFilter ||
+          normalize(item.style).includes(normalize(styleFilter));
+        const matchColor =
+          !colorFilter ||
+          normalize(item.color).includes(normalize(colorFilter));
+        const matchPo =
+          !poFilter || normalize(item.po).includes(normalize(poFilter));
+        return matchStyle && matchColor && matchPo;
+      });
+      newData[loc] = items;
+    });
+    return newData;
+  }, [mapData, styleFilter, colorFilter, poFilter]);
 
   const toggleSelection = (item) => {
     const itemKey = `${item.sku}-${item.po}-${item.size}`;
@@ -681,8 +872,9 @@ const WarehouseVisualView = ({
       );
     } else {
       setSelectedItems([...selectedItems, item]);
-      // Default quantity = full stock
+      // Init data for features
       setBatchQuantities((prev) => ({ ...prev, [itemKey]: item.stock }));
+      setEditStockQuantities((prev) => ({ ...prev, [itemKey]: item.stock })); // Init with current stock
     }
   };
 
@@ -691,7 +883,6 @@ const WarehouseVisualView = ({
       alert("Vui lòng chọn Người nhận/Chuyền");
       return;
     }
-    // Prepare data
     const itemsToExport = selectedItems
       .map((item) => {
         const itemKey = `${item.sku}-${item.po}-${item.size}`;
@@ -708,18 +899,81 @@ const WarehouseVisualView = ({
     }
 
     onBatchExport(itemsToExport, selectedLoc.name, batchPartner, batchDate);
-    onSelectLoc(null); // Close modal
+    onSelectLoc(null);
+  };
+
+  const handleBatchMoveSubmit = () => {
+    if (!moveDestination) {
+      alert("Vui lòng nhập/chọn Vị trí mới");
+      return;
+    }
+    if (!locations.includes(moveDestination)) {
+      alert(
+        `LỖI: Vị trí "${moveDestination}" không tồn tại trong hệ thống. Vui lòng chọn vị trí có sẵn.`
+      );
+      return;
+    }
+
+    if (moveDestination === selectedLoc.name) {
+      alert("Vị trí mới phải khác vị trí hiện tại");
+      return;
+    }
+
+    onBatchMove(selectedItems, selectedLoc.name, moveDestination);
+    onSelectLoc(null);
+  };
+
+  // Handle Stock Edit Submit
+  const handleBatchEditStockSubmit = () => {
+    // Logic: Send items with new quantities to App
+    onBatchStockUpdate(selectedItems, selectedLoc.name, editStockQuantities);
+    onSelectLoc(null);
   };
 
   return (
     <div className="bg-white rounded-xl shadow-md p-4 min-h-[600px] flex flex-col">
-      <h2 className="text-lg font-bold text-gray-700 mb-4 flex items-center gap-2">
-        <MapPin className="text-purple-600" /> Sơ Đồ & Vị Trí Kho
-      </h2>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+        <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2">
+          <MapPin className="text-purple-600" /> Sơ Đồ & Vị Trí Kho
+        </h2>
+        {/* BỘ LỌC CHO SƠ ĐỒ KHO */}
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <input
+            placeholder="Lọc Style..."
+            className="p-1.5 border rounded text-sm w-1/3 md:w-32"
+            value={styleFilter}
+            onChange={(e) => setStyleFilter(e.target.value)}
+          />
+          <input
+            placeholder="Lọc Màu..."
+            className="p-1.5 border rounded text-sm w-1/3 md:w-24"
+            value={colorFilter}
+            onChange={(e) => setColorFilter(e.target.value)}
+          />
+          <input
+            placeholder="Lọc PO..."
+            className="p-1.5 border rounded text-sm w-1/4 md:w-24"
+            value={poFilter}
+            onChange={(e) => setPoFilter(e.target.value)}
+          />
+          {(styleFilter || colorFilter || poFilter) && (
+            <button
+              onClick={() => {
+                setStyleFilter("");
+                setColorFilter("");
+                setPoFilter("");
+              }}
+              className="text-red-500 hover:bg-red-50 p-1 rounded"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto max-h-[600px] p-1">
         {locationKeys.map((loc) => {
-          const items = mapData[loc];
+          const items = filteredMapData[loc];
           const totalQty = items.reduce((sum, item) => sum + item.stock, 0);
           const itemCount = items.length;
 
@@ -729,32 +983,32 @@ const WarehouseVisualView = ({
               onClick={() => onSelectLoc({ name: loc, items })}
               className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-lg active:scale-95 flex flex-col justify-between h-32 ${
                 itemCount > 0
-                  ? "bg-purple-50 border-purple-200 hover:border-purple-400"
+                  ? "bg-emerald-50 border-emerald-200 hover:border-emerald-400"
                   : "bg-gray-50 border-gray-100 hover:border-gray-300 opacity-70"
               }`}
             >
               <div className="flex justify-between items-start">
                 <span
                   className={`font-bold text-lg truncate ${
-                    itemCount > 0 ? "text-purple-800" : "text-gray-400"
+                    itemCount > 0 ? "text-emerald-800" : "text-gray-400"
                   }`}
                 >
                   {loc}
                 </span>
-                {itemCount > 0 && <Box className="text-purple-300 w-8 h-8" />}
+                {itemCount > 0 && <Box className="text-emerald-300 w-8 h-8" />}
               </div>
 
               <div className="mt-2">
                 {itemCount > 0 ? (
                   <div>
-                    <div className="text-2xl font-bold text-purple-700">
+                    <div className="text-2xl font-bold text-emerald-700">
                       {totalQty}{" "}
                       <span className="text-xs font-normal text-gray-500">
                         sp
                       </span>
                     </div>
-                    <div className="text-xs text-purple-600 font-medium">
-                      {itemCount} loại hàng
+                    <div className="text-xs text-emerald-600 font-medium">
+                      {itemCount} loại hàng (đã lọc)
                     </div>
                   </div>
                 ) : (
@@ -769,11 +1023,10 @@ const WarehouseVisualView = ({
         })}
       </div>
 
-      {/* Modal chi tiết vị trí */}
       {selectedLoc && (
         <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
-            <div className="p-4 bg-purple-600 text-white flex justify-between items-center shadow-md z-10">
+            <div className="p-4 bg-emerald-600 text-white flex justify-between items-center shadow-md z-10">
               <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-lg">
                   <MapPin size={24} />
@@ -782,21 +1035,53 @@ const WarehouseVisualView = ({
                   <h3 className="text-xl font-bold">
                     {selectedLoc.name || "Vị trí chưa xác định"}
                   </h3>
-                  <p className="text-purple-100 text-xs">
+                  <p className="text-emerald-100 text-xs">
                     Tổng: {selectedLoc.items.reduce((s, i) => s + i.stock, 0)}{" "}
                     sản phẩm
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {selectedItems.length > 0 && !isBatchMode && (
-                  <button
-                    onClick={() => setIsBatchMode(true)}
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-2 text-sm animate-bounce"
-                  >
-                    <LogOut size={16} /> Xuất ({selectedItems.length}) mục
-                  </button>
-                )}
+                {/* NÚT CHUYỂN VỊ TRÍ */}
+                {selectedItems.length > 0 &&
+                  !isBatchMode &&
+                  !isMoveMode &&
+                  !isEditStockMode && (
+                    <button
+                      onClick={() => setIsMoveMode(true)}
+                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-2 text-sm animate-bounce"
+                    >
+                      <MoveRight size={16} /> Chuyển ({selectedItems.length})
+                      mục
+                    </button>
+                  )}
+
+                {/* NÚT SỬA TỒN KHO (MỚI) */}
+                {selectedItems.length > 0 &&
+                  !isBatchMode &&
+                  !isMoveMode &&
+                  !isEditStockMode && (
+                    <button
+                      onClick={() => setIsEditStockMode(true)}
+                      className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-2 text-sm animate-bounce"
+                    >
+                      <Edit3 size={16} /> Sửa tồn ({selectedItems.length})
+                    </button>
+                  )}
+
+                {/* NÚT XUẤT */}
+                {selectedItems.length > 0 &&
+                  !isBatchMode &&
+                  !isMoveMode &&
+                  !isEditStockMode && (
+                    <button
+                      onClick={() => setIsBatchMode(true)}
+                      className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-2 text-sm animate-bounce"
+                    >
+                      <LogOut size={16} /> Xuất ({selectedItems.length}) mục
+                    </button>
+                  )}
+
                 <button
                   onClick={() => onSelectLoc(null)}
                   className="p-2 hover:bg-white/20 rounded-full transition-colors"
@@ -858,7 +1143,7 @@ const WarehouseVisualView = ({
                             <td className="p-2">
                               <div className="font-bold">{item.style}</div>
                               <div className="text-xs text-gray-500">
-                                {item.sku} | {item.color} | {item.size}
+                                PO: {item.po} | {item.color} | {item.size}
                               </div>
                             </td>
                             <td className="p-2 text-right font-medium">
@@ -899,6 +1184,119 @@ const WarehouseVisualView = ({
                     </button>
                   </div>
                 </div>
+              ) : isMoveMode ? (
+                // --- GIAO DIỆN CHUYỂN KHO ---
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-blue-600 border-b pb-2">
+                    <MoveRight size={20} /> Xác nhận Chuyển Vị Trí
+                  </h3>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-1">
+                      Chuyển đến Vị trí mới (Tìm kiếm & Chọn):
+                    </label>
+                    {/* SỬ DỤNG ConfigurableSelect ĐỂ CHO PHÉP TÌM KIẾM, NHƯNG KHÔNG CHO ADD MỚI */}
+                    <ConfigurableSelect
+                      label=""
+                      value={moveDestination}
+                      onChange={setMoveDestination}
+                      options={locations.filter((l) => l !== selectedLoc.name)}
+                      placeholder="Nhập tên vị trí để tìm..."
+                      required={true}
+                      allowAdd={false} // Chặn thêm mới, chỉ cho chọn
+                    />
+                  </div>
+                  <p className="mb-2 font-medium">
+                    Danh sách vật tư sẽ chuyển:
+                  </p>
+                  <ul className="list-disc list-inside text-sm text-gray-600 mb-4 bg-gray-50 p-2 rounded max-h-40 overflow-y-auto">
+                    {selectedItems.map((item, idx) => (
+                      <li key={idx}>
+                        {item.style} - {item.color} - {item.size} (PO: {item.po}
+                        ) - Tồn: {item.stock}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex justify-end gap-3 mt-4 pt-4 border-t">
+                    <button
+                      onClick={() => setIsMoveMode(false)}
+                      className="px-4 py-2 text-gray-600 bg-gray-200 rounded hover:bg-gray-300"
+                    >
+                      Quay lại
+                    </button>
+                    <button
+                      onClick={handleBatchMoveSubmit}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold flex items-center gap-2"
+                    >
+                      <MoveRight size={18} /> Xác nhận Chuyển
+                    </button>
+                  </div>
+                </div>
+              ) : isEditStockMode ? (
+                // --- GIAO DIỆN SỬA TỒN KHO ---
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-purple-600 border-b pb-2">
+                    <Edit3 size={20} /> Điều chỉnh Số Lượng Tồn Kho
+                  </h3>
+                  <div className="bg-purple-50 text-purple-800 text-sm p-3 rounded mb-4">
+                    * Nhập số lượng tồn kho <strong>thực tế</strong>. Hệ thống
+                    sẽ tự động tạo phiếu Nhập/Xuất điều chỉnh.
+                  </div>
+                  <table className="w-full text-sm text-left border rounded">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="p-2">Hàng hóa</th>
+                        <th className="p-2 text-right">Tồn Hiện Tại</th>
+                        <th className="p-2 w-40 text-right">Tồn Thực Tế</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedItems.map((item, idx) => {
+                        const itemKey = `${item.sku}-${item.po}-${item.size}`;
+                        return (
+                          <tr key={idx} className="border-t">
+                            <td className="p-2">
+                              <div className="font-bold">{item.style}</div>
+                              <div className="text-xs text-gray-500">
+                                PO: {item.po} | {item.color} | {item.size}
+                              </div>
+                            </td>
+                            <td className="p-2 text-right font-medium text-gray-600">
+                              {item.stock}
+                            </td>
+                            <td className="p-2">
+                              <input
+                                type="number"
+                                min="0"
+                                className="w-full border p-1 rounded text-center font-bold text-purple-700 focus:ring-2 focus:ring-purple-500 outline-none"
+                                value={editStockQuantities[itemKey]}
+                                onChange={(e) =>
+                                  setEditStockQuantities({
+                                    ...editStockQuantities,
+                                    [itemKey]: parseInt(e.target.value) || 0,
+                                  })
+                                }
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <div className="flex justify-end gap-3 mt-4 pt-4 border-t">
+                    <button
+                      onClick={() => setIsEditStockMode(false)}
+                      className="px-4 py-2 text-gray-600 bg-gray-200 rounded hover:bg-gray-300"
+                    >
+                      Quay lại
+                    </button>
+                    <button
+                      onClick={handleBatchEditStockSubmit}
+                      className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 font-bold flex items-center gap-2"
+                    >
+                      <Save size={18} /> Lưu Thay Đổi
+                    </button>
+                  </div>
+                </div>
               ) : selectedLoc.items.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400">
                   <Box size={64} className="mb-4 opacity-20" />
@@ -906,18 +1304,17 @@ const WarehouseVisualView = ({
                 </div>
               ) : (
                 <table className="w-full text-sm text-left bg-white rounded-lg shadow-sm overflow-hidden">
-                  <thead className="bg-purple-50 text-purple-900 font-bold sticky top-0 shadow-sm">
+                  <thead className="bg-emerald-50 text-emerald-900 font-bold sticky top-0 shadow-sm">
                     <tr>
-                      <th className="p-3 w-10 text-center">
-                        {/* Header Checkbox optional */}
-                      </th>
-                      <th className="p-3">Mã hàng</th>
+                      <th className="p-3 w-10 text-center"></th>
+                      {/* Bỏ cột Mã hàng */}
                       <th className="p-3">Style</th>
                       <th className="p-3 hidden sm:table-cell">Màu</th>
                       <th className="p-3">PO</th>
                       <th className="p-3 hidden sm:table-cell">Size</th>
                       <th className="p-3 text-right">Tồn Kho</th>
-                      <th className="p-3 w-20 text-center">Tác vụ</th>
+                      {/* Thêm cột +/- KH */}
+                      <th className="p-3 text-right">+/- KH</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -927,22 +1324,32 @@ const WarehouseVisualView = ({
                         (i) => `${i.sku}-${i.po}-${i.size}` === itemKey
                       );
 
+                      // Màu sắc cho cột +/- KH
+                      const planDiff = item.planDiff;
+                      let diffColor = "text-black font-bold"; // Mặc định đen (>= 0)
+
+                      if (planDiff !== "-" && planDiff !== undefined) {
+                        const val = parseFloat(planDiff);
+                        if (val < 0) diffColor = "text-red-500 font-bold"; // Âm -> Đỏ
+                        // >= 0 -> Đen (default)
+                      } else {
+                        diffColor = "text-gray-400"; // Không có dữ liệu
+                      }
+
                       return (
                         <tr
                           key={idx}
-                          className={`transition-colors ${
+                          className={`transition-colors cursor-pointer ${
                             isSelected
                               ? "bg-orange-50"
-                              : "hover:bg-purple-50/50"
+                              : "hover:bg-emerald-50/50"
                           }`}
+                          onClick={() => toggleSelection(item)}
                         >
                           <td className="p-3 text-center">
-                            <button
-                              onClick={() => toggleSelection(item)}
+                            <div
                               className={`p-1 rounded ${
-                                isSelected
-                                  ? "text-orange-600"
-                                  : "text-gray-300 hover:text-gray-500"
+                                isSelected ? "text-orange-600" : "text-gray-300"
                               }`}
                             >
                               {isSelected ? (
@@ -950,11 +1357,9 @@ const WarehouseVisualView = ({
                               ) : (
                                 <Square size={20} />
                               )}
-                            </button>
+                            </div>
                           </td>
-                          <td className="p-3 font-mono font-bold text-gray-600">
-                            {item.sku}
-                          </td>
+                          {/* Bỏ cột SKU */}
                           <td className="p-3 font-medium">{item.style}</td>
                           <td className="p-3 hidden sm:table-cell">
                             {item.color}
@@ -967,19 +1372,11 @@ const WarehouseVisualView = ({
                           <td className="p-3 hidden sm:table-cell">
                             {item.size}
                           </td>
-                          <td className="p-3 text-right font-bold text-lg text-purple-700">
+                          <td className="p-3 text-right font-bold text-lg text-emerald-700">
                             {item.stock}
                           </td>
-                          <td className="p-3 text-center">
-                            <button
-                              onClick={() =>
-                                onNavigateExport(item, selectedLoc.name)
-                              }
-                              className="bg-orange-100 text-orange-700 p-1.5 rounded hover:bg-orange-200 transition-colors flex items-center gap-1 text-xs font-bold"
-                              title="Xuất nhanh mục này"
-                            >
-                              <LogOut size={14} /> Xuất
-                            </button>
+                          <td className={`p-3 text-right ${diffColor}`}>
+                            {planDiff}
                           </td>
                         </tr>
                       );
@@ -988,7 +1385,7 @@ const WarehouseVisualView = ({
                 </table>
               )}
             </div>
-            {!isBatchMode && (
+            {!isBatchMode && !isMoveMode && !isEditStockMode && (
               <div className="p-3 border-t bg-white text-right">
                 <button
                   onClick={() => onSelectLoc(null)}
@@ -1005,325 +1402,9 @@ const WarehouseVisualView = ({
   );
 };
 
-// --- VIEW TỒN KHO & ĐỔI VỊ TRÍ ---
-const InventoryView = ({
-  products,
-  history,
-  onDeleteProduct,
-  onUpdateLocation,
-  isAdmin,
-  onAdminLogin,
-  onAdminLogout,
-}) => {
-  const [filters, setFilters] = useState({
-    sku: "",
-    color: "",
-    unit: "",
-    po: "",
-  });
-  const [editingKey, setEditingKey] = useState(null);
-  const [newLocation, setNewLocation] = useState("");
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
+// ... (CatalogView, HistoryView, SettingsHelpView, InventoryView is removed) ...
 
-  const inventoryRows = useMemo(() => {
-    const rows = [];
-    products.forEach((p) => {
-      const stockByLoc = calculateStockByLocation(p, history);
-      if (Object.keys(stockByLoc).length === 0) {
-        rows.push({ ...p, stock: 0, location: "Chưa có" });
-      } else {
-        Object.keys(stockByLoc).forEach((loc) => {
-          rows.push({
-            ...p,
-            stock: stockByLoc[loc],
-            location: loc,
-            uniqueKey: `${p.sku}-${p.po}-${p.size}-${loc}`,
-          });
-        });
-      }
-    });
-    return rows;
-  }, [products, history]);
-
-  const filtered = useMemo(() => {
-    return inventoryRows.filter((p) => {
-      if (p.stock === 0) return false;
-      const fSku = normalize(filters.sku);
-      const fColor = normalize(filters.color);
-      const fUnit = normalize(filters.unit);
-      const fPo = normalize(filters.po);
-      const matchSku =
-        !fSku ||
-        normalize(p.sku).includes(fSku) ||
-        normalize(p.style).includes(fSku);
-      const matchColor = !fColor || normalize(p.color).includes(fColor);
-      const matchUnit = !fUnit || normalize(p.unit).includes(fUnit);
-      const matchPo = !fPo || normalize(p.po).includes(fPo);
-      return matchSku && matchColor && matchUnit && matchPo;
-    });
-  }, [inventoryRows, filters]);
-
-  const handleLockClick = () => {
-    if (isAdmin) {
-      if (confirm("Bạn có chắc chắn muốn thoát chế độ Admin?")) {
-        onAdminLogout();
-      }
-    } else {
-      setShowAuthModal(true);
-    }
-  };
-
-  const handleLoginSubmit = (e) => {
-    e.preventDefault();
-    const success = onAdminLogin(passwordInput);
-    if (success) {
-      setShowAuthModal(false);
-      setPasswordInput("");
-    }
-  };
-
-  const startEditing = (item) => {
-    if (!isAdmin) return;
-    setEditingKey(item.uniqueKey);
-    setNewLocation(item.location === "Chưa có" ? "" : item.location);
-  };
-
-  const saveLocation = (item) => {
-    onUpdateLocation(item, item.location, newLocation);
-    setEditingKey(null);
-  };
-
-  const clearFilters = () =>
-    setFilters({ sku: "", color: "", unit: "", po: "" });
-
-  return (
-    <div className="bg-white rounded-xl shadow-md flex flex-col h-[600px] relative">
-      {/* Auth Modal */}
-      {showAuthModal && (
-        <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center rounded-xl p-4">
-          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <Lock size={20} className="text-indigo-600" /> Nhập Mật Mã Admin
-            </h3>
-            <form onSubmit={handleLoginSubmit}>
-              <input
-                type="password"
-                autoFocus
-                className="w-full p-3 border rounded mb-4 text-base"
-                placeholder="Mật mã..."
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-              />
-              <div className="flex gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowAuthModal(false)}
-                  className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold"
-                >
-                  Mở Khóa
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <div className="p-4 border-b bg-emerald-50 rounded-t-xl">
-        <div className="flex justify-between items-center mb-3">
-          <div className="flex items-center gap-3">
-            <label className="block text-sm font-bold text-emerald-800 flex items-center gap-2">
-              <Filter size={18} /> Tồn Kho Chi Tiết ({filtered.length})
-            </label>
-            {(filters.sku || filters.color || filters.unit || filters.po) && (
-              <button
-                onClick={clearFilters}
-                className="text-xs flex items-center gap-1 text-red-600 hover:bg-red-50 px-2 py-1 rounded"
-              >
-                <X size={14} /> Xóa lọc
-              </button>
-            )}
-          </div>
-
-          {/* Nút Khóa / Mở Khóa */}
-          <button
-            onClick={handleLockClick}
-            className={`p-2 rounded-full shadow-sm transition-all ${
-              isAdmin
-                ? "bg-red-100 text-red-600 hover:bg-red-200"
-                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
-            }`}
-            title={
-              isAdmin
-                ? "Đang mở khóa (Bấm để khóa)"
-                : "Bấm để mở khóa chỉnh sửa"
-            }
-          >
-            {isAdmin ? <Unlock size={20} /> : <Lock size={20} />}
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="relative">
-            <input
-              type="text"
-              className="w-full p-2 border border-emerald-300 rounded text-base focus:ring-1 focus:ring-emerald-600 outline-none"
-              placeholder="Mã hàng / Style..."
-              value={filters.sku}
-              onChange={(e) => setFilters({ ...filters, sku: e.target.value })}
-            />
-          </div>
-          <div className="relative">
-            <input
-              type="text"
-              className="w-full p-2 border border-emerald-300 rounded text-base focus:ring-1 focus:ring-emerald-600 outline-none"
-              placeholder="Màu..."
-              value={filters.color}
-              onChange={(e) =>
-                setFilters({ ...filters, color: e.target.value })
-              }
-            />
-          </div>
-          <div className="relative">
-            <input
-              type="text"
-              className="w-full p-2 border border-emerald-300 rounded text-base focus:ring-1 focus:ring-emerald-600 outline-none"
-              placeholder="Đơn..."
-              value={filters.unit}
-              onChange={(e) => setFilters({ ...filters, unit: e.target.value })}
-            />
-          </div>
-          <div className="relative">
-            <input
-              type="text"
-              className="w-full p-2 border border-emerald-300 rounded text-base focus:ring-1 focus:ring-emerald-600 outline-none"
-              placeholder="PO..."
-              value={filters.po}
-              onChange={(e) => setFilters({ ...filters, po: e.target.value })}
-            />
-          </div>
-        </div>
-      </div>
-      <div className="overflow-auto flex-1">
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 p-8">
-            <Package size={48} className="mb-2 opacity-20" />
-            <p className="text-sm">
-              Không có dữ liệu tồn kho (Tồn = 0) hoặc không khớp bộ lọc.
-            </p>
-          </div>
-        ) : (
-          <table className="w-full text-xs sm:text-sm text-left whitespace-nowrap">
-            <thead className="bg-gray-100 text-gray-600 sticky top-0 z-10 shadow-sm">
-              <tr>
-                <th className="p-3">Mã hàng</th>
-                <th className="p-3">Style</th>
-                <th className="p-3 hidden sm:table-cell">Màu</th>
-                <th className="p-3 hidden sm:table-cell">Size</th>
-                <th className="p-3 hidden sm:table-cell">Đơn</th>
-                <th className="p-3">PO</th>
-                <th className="p-3 text-right font-bold text-gray-800 bg-gray-50">
-                  Tồn
-                </th>
-                <th className="p-3 w-40">Vị Trí</th>
-                <th className="p-3 w-16"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filtered.slice(0, 100).map((item, idx) => (
-                <tr
-                  key={idx}
-                  className="hover:bg-emerald-50/50 transition-colors"
-                >
-                  <td className="p-3 font-mono font-medium text-gray-500">
-                    {item.sku}
-                  </td>
-                  <td className="p-3 font-medium text-gray-800">
-                    {item.style}
-                  </td>
-                  <td className="p-3 hidden sm:table-cell">{item.color}</td>
-                  <td className="p-3 hidden sm:table-cell">{item.size}</td>
-                  <td className="p-3 hidden sm:table-cell">{item.unit}</td>
-                  <td className="p-3">{item.po}</td>
-                  <td
-                    className={`p-3 text-right font-bold text-lg bg-gray-50 ${
-                      item.stock < 0 ? "text-red-600" : "text-emerald-700"
-                    }`}
-                  >
-                    {item.stock}
-                  </td>
-
-                  <td className="p-3">
-                    {editingKey === item.uniqueKey ? (
-                      <div className="flex gap-1 items-center">
-                        <input
-                          autoFocus
-                          className="w-24 p-1 border rounded text-xs text-gray-900"
-                          value={newLocation}
-                          onChange={(e) => setNewLocation(e.target.value)}
-                          onKeyDown={(e) =>
-                            e.key === "Enter" && saveLocation(item)
-                          }
-                        />
-                        <button
-                          onClick={() => saveLocation(item)}
-                          className="text-green-600 bg-green-100 p-1.5 rounded shadow hover:bg-green-200"
-                        >
-                          <CheckCircle size={16} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex justify-between items-center group">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            item.location !== "Chưa có"
-                              ? "bg-indigo-100 text-indigo-700"
-                              : "bg-gray-200 text-gray-500"
-                          } truncate max-w-[100px]`}
-                          title={item.location}
-                        >
-                          {item.location}
-                        </span>
-                        {isAdmin && (
-                          <button
-                            onClick={() => startEditing(item)}
-                            className="bg-blue-50 hover:bg-blue-100 text-blue-600 p-2 rounded-lg shadow-md border border-blue-200 transition-all active:scale-95 flex items-center justify-center w-8 h-8 ml-2"
-                            title="Sửa vị trí"
-                          >
-                            <Edit3 size={18} />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="p-3 text-right">
-                    {/* BUTTON DELETE - NỔI KHỐI TO HƠN */}
-                    {isAdmin && (
-                      <button
-                        onClick={() => onDeleteProduct(item)}
-                        className="bg-red-100 hover:bg-red-200 text-red-600 p-2 rounded-lg shadow-md border border-red-200 transition-all active:scale-95 flex items-center justify-center w-8 h-8"
-                        title="Xóa dòng này"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-};
-
+// --- CatalogView (Giữ nguyên) ---
 const CatalogView = ({
   products,
   onAddProduct,
@@ -1588,6 +1669,7 @@ const CatalogView = ({
   );
 };
 
+// --- TransactionView (Giữ nguyên) ---
 const TransactionView = ({
   activeTab,
   products,
@@ -1599,8 +1681,8 @@ const TransactionView = ({
   partners,
   onLocationsChange,
   onPartnersChange,
-  prefillData, // NEW PROP
-  onClearPrefill, // NEW PROP: Callback to clear data
+  prefillData,
+  onClearPrefill,
 }) => {
   const [filters, setFilters] = useState({
     sku: "",
@@ -1627,25 +1709,19 @@ const TransactionView = ({
     }
   }, [selected]);
 
-  // NEW: Effect to handle prefill from Map view (Fixed)
   useEffect(() => {
-    // Check if we have prefill data and we are in output mode
     if (prefillData && activeTab === "output") {
       setSelected(prefillData.item);
-      // Set form with Location Source and Default Qty 1 (user requested speed)
       setForm((prev) => ({
         ...prev,
         locationOrReceiver: prefillData.location,
         quantity: 1,
       }));
-      // Important: Call the parent to clear this data so it doesn't stick
       onClearPrefill();
     }
   }, [prefillData, activeTab, onClearPrefill]);
 
   useEffect(() => {
-    // Only reset if we are NOT using prefill data this render cycle
-    // This prevents the form from being wiped out immediately after prefill
     if (!prefillData && !selected) {
       setFilters({ sku: "", color: "", unit: "", po: "" });
       setForm((prev) => ({
@@ -1656,7 +1732,7 @@ const TransactionView = ({
         note: "",
       }));
     }
-  }, [activeTab]); // Removed other deps to avoid unnecessary clears
+  }, [activeTab]);
 
   const filtered = useMemo(() => {
     const hasFilter = Object.values(filters).some(
@@ -1682,19 +1758,7 @@ const TransactionView = ({
     });
   }, [products, filters]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!selected) return;
-
-    // --- NEW VALIDATION ---
-    if (!locations.includes(form.locationOrReceiver)) {
-      alert(
-        "Lỗi: Vị trí không hợp lệ! Chỉ được nhập các vị trí có trong danh sách."
-      );
-      return;
-    }
-    // ----------------------
-
+  const processSubmit = () => {
     if (activeTab === "output") {
       const reqQty = parseInt(form.quantity) || 0;
       const targetLoc = form.locationOrReceiver;
@@ -1726,6 +1790,19 @@ const TransactionView = ({
     setSelected(null);
   };
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!selected) return;
+
+    if (!locations.includes(form.locationOrReceiver)) {
+      alert(
+        "Lỗi: Vị trí không hợp lệ! Chỉ được nhập các vị trí có trong danh sách."
+      );
+      return;
+    }
+    processSubmit();
+  };
+
   const clearFilters = () =>
     setFilters({ sku: "", color: "", unit: "", po: "" });
 
@@ -1739,8 +1816,20 @@ const TransactionView = ({
         .join(" | ")
     : "";
 
+  // TÍNH TOÁN +/- KH (Tổng Nhập - NC Thùng) - NEW LOGIC
+  const ncValue = selected
+    ? parseFloat(String(selected.cartonNC || "0").replace(/[^0-9.]/g, "")) || 0
+    : 0;
+  const currentTotalImport = selected
+    ? calculateTotalImport(selected, history)
+    : 0;
+
+  // Logic hiển thị: Nếu NC = 0 hoặc trống thì hiện "-", ngược lại hiện (Tổng nhập - NC)
+  const rawDiff = currentTotalImport - ncValue;
+  const planDifference = ncValue > 0 ? rawDiff.toFixed(2) : "-";
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
       <div className="md:col-span-2 bg-white rounded-xl shadow flex flex-col h-[600px]">
         <div className="p-4 border-b bg-gray-50">
           <div className="flex justify-between items-center mb-3">
@@ -1831,23 +1920,26 @@ const TransactionView = ({
                       : ""
                   }`}
                 >
-                  <div>
-                    <div className="font-bold text-gray-800 text-lg flex gap-2 items-center">
-                      <span>{p.style}</span>
-                      <span className="text-sm bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
+                  <div className="w-full">
+                    {/* CẢI TIẾN 1: STYLE VÀ PO TO Ở TRÊN */}
+                    <div className="font-bold text-gray-800 text-lg flex justify-between items-center">
+                      <span className="truncate">{p.style}</span>
+                      <span className="text-sm bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded ml-2 whitespace-nowrap">
                         PO: {p.po}
                       </span>
                     </div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      <span className="font-mono font-bold text-gray-700">
-                        {p.sku}
-                      </span>
-                      <span className="mx-1">|</span> Màu: {p.color}
-                      <span className="mx-1">|</span> Đơn: {p.unit}
-                      <span className="mx-1">|</span> Size: {p.size}
+                    {/* THÔNG TIN KHÁC Ở DƯỚI */}
+                    <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-2">
+                      <span className="text-gray-700">Màu: {p.color}</span>
+                      <span>|</span>
+                      <span>Đơn: {p.unit}</span>
+                      <span>|</span>
+                      <span>Size: {p.size}</span>
+                      <span>|</span>
+                      <span>NC: {p.cartonNC || "-"}</span>
                     </div>
                   </div>
-                  <div className="text-gray-400">
+                  <div className="text-gray-400 ml-2">
                     {selected?.sku === p.sku && selected?.po === p.po ? (
                       <CheckCircle size={24} className="text-blue-600" />
                     ) : (
@@ -1893,6 +1985,10 @@ const TransactionView = ({
               </div>
               <div className="mt-2 pt-2 border-t border-white/20 text-xs font-mono text-yellow-200">
                 Tồn: {stockDisplay || "0"}
+              </div>
+              {/* CẢI TIẾN 2: THÊM DÒNG +/- KH (NEW LOGIC) */}
+              <div className="text-xs font-mono text-white mt-1">
+                +/- KH: <strong>{planDifference}</strong>
               </div>
             </div>
 
@@ -1944,19 +2040,18 @@ const TransactionView = ({
               allowAdd={false} // QUAN TRỌNG: Chỉ cho chọn, không cho thêm mới tại đây
             />
 
-            <ConfigurableSelect
-              label={
-                activeTab === "input"
-                  ? "Nhà Cung Cấp / Nguồn"
-                  : "Người Nhận / Chuyền"
-              }
-              value={form.partner}
-              onChange={(val) => setForm({ ...form, partner: val })}
-              options={partners}
-              onOptionsChange={onPartnersChange}
-              placeholder="Chọn đối tác..."
-              allowAdd={true} // Partner vẫn cho phép thêm mới
-            />
+            {/* Chỉ hiện ô Đối tác khi là XUẤT KHO */}
+            {activeTab === "output" && (
+              <ConfigurableSelect
+                label="Người Nhận / Chuyền"
+                value={form.partner}
+                onChange={(val) => setForm({ ...form, partner: val })}
+                options={partners}
+                onOptionsChange={onPartnersChange}
+                placeholder="Chọn đối tác..."
+                allowAdd={true}
+              />
+            )}
 
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -1994,6 +2089,7 @@ const TransactionView = ({
   );
 };
 
+// --- HistoryView (Giữ nguyên) ---
 const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => (
   <div className="bg-white rounded-xl shadow-md p-6">
     <h2 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2">
@@ -2008,7 +2104,10 @@ const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => (
             <th className="p-3">Mã hàng</th>
             <th className="p-3">Style</th>
             <th className="p-3 text-right">SL</th>
-            <th className="p-3">Vị trí/Nơi nhận</th>
+            <th className="p-3">Vị trí</th>
+            {/* THÊM CỘT ĐỐI TÁC HIỂN THỊ RIÊNG */}
+            <th className="p-3">Đối tác</th>
+            <th className="p-3">Ghi chú</th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -2032,6 +2131,12 @@ const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => (
               <td className="p-3 text-gray-600 truncate max-w-[150px]">
                 {h.locationOrReceiver}
               </td>
+              <td className="p-3 text-indigo-600 font-medium truncate max-w-[100px]">
+                {h.partner || "-"}
+              </td>
+              <td className="p-3 text-gray-500 text-xs italic truncate max-w-[150px]">
+                {h.note}
+              </td>
               <td className="p-3 text-right">
                 {/* BUTTON DELETE - NỔI KHỐI TO HƠN */}
                 {isAdmin && (
@@ -2052,6 +2157,7 @@ const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => (
   </div>
 );
 
+// --- SettingsHelpView (Giữ nguyên) ---
 const SettingsHelpView = ({
   activeTab,
   scriptUrl,
@@ -2219,11 +2325,11 @@ const SettingsHelpView = ({
       ) : (
         <>
           <h2 className="text-xl font-bold mb-4 text-blue-600">
-            CẬP NHẬT MÃ SCRIPT MỚI (V2.7 - Tự Động Đồng Bộ Vị Trí)
+            CẬP NHẬT MÃ SCRIPT MỚI (V3.2 - FIX LỖI GHI VỊ TRÍ)
           </h2>
           <p className="mb-2 text-sm text-red-500 font-bold">
-            QUAN TRỌNG: Bạn CẦN cập nhật mã này để hỗ trợ tính năng đồng bộ danh
-            sách vị trí kho.
+            QUAN TRỌNG: Bạn CẦN cập nhật mã này để fix lỗi ghi đè undefined vào
+            vị trí.
           </p>
           <div className="bg-gray-900 text-gray-100 p-4 rounded text-xs overflow-x-auto relative">
             <button
@@ -2254,114 +2360,6 @@ const SettingsHelpView = ({
           </div>
         </>
       )}
-    </div>
-  );
-};
-
-const QRScannerModal = ({ onClose, onScan }) => {
-  const [errorMsg, setErrorMsg] = useState("");
-  const scanProcessed = useRef(false);
-  const [key, setKey] = useState(0);
-
-  const handleResult = (data) => {
-    if (data) {
-      if (scanProcessed.current) return;
-
-      const code = data?.text || data;
-      if (code) {
-        scanProcessed.current = true;
-        onScan(code);
-      }
-    }
-  };
-
-  const handleError = (err) => {
-    // console.error(err);
-    if (
-      err &&
-      (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")
-    ) {
-      setErrorMsg(
-        "Quyền truy cập Camera bị từ chối. Vui lòng cấp quyền và thử lại."
-      );
-    } else {
-      setErrorMsg("Lỗi Camera: " + (err.message || "Không xác định"));
-    }
-  };
-
-  // Hàm để gọi xin cấp quyền thủ công nếu người dùng bấm nút
-  const requestCameraPermission = async () => {
-    try {
-      // Gọi getUserMedia để kích hoạt prompt của trình duyệt
-      await navigator.mediaDevices.getUserMedia({ video: true });
-      // Nếu thành công, reset lỗi và remount lại scanner để nó tự chạy
-      setErrorMsg("");
-      setKey((prev) => prev + 1);
-    } catch (err) {
-      handleError(err);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[100] bg-black flex flex-col animate-fade-in">
-      {/* Header Modal */}
-      <div className="bg-slate-900 p-4 flex justify-between items-center text-white">
-        <h2 className="font-bold flex items-center gap-2">
-          <Scan className="text-indigo-400" /> Quét Mã Vị Trí
-        </h2>
-        <button
-          onClick={onClose}
-          className="p-2 bg-white/10 rounded-full hover:bg-white/20"
-        >
-          <X size={24} />
-        </button>
-      </div>
-
-      {/* Camera Area */}
-      <div className="flex-1 bg-black relative flex items-center justify-center overflow-hidden">
-        <div className="w-full h-full max-w-md mx-auto relative bg-black rounded-lg overflow-hidden flex items-center justify-center">
-          {!errorMsg ? (
-            <>
-              {/* Thư viện QR Scanner chuẩn (react-qr-scanner) */}
-              <QrScanner
-                key={key}
-                delay={300}
-                onError={handleError}
-                onScan={handleResult}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                constraints={{
-                  video: { facingMode: "environment" },
-                }}
-              />
-
-              {/* Overlay khung quét */}
-              <div className="absolute inset-0 border-2 border-indigo-500/50 flex items-center justify-center pointer-events-none">
-                <div className="w-64 h-64 border-2 border-indigo-400 rounded-lg relative">
-                  <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-indigo-400 -mt-1 -ml-1"></div>
-                  <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-indigo-400 -mt-1 -mr-1"></div>
-                  <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-indigo-400 -mb-1 -ml-1"></div>
-                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-indigo-400 -mb-1 -mr-1"></div>
-                  <div className="absolute top-0 left-0 w-full h-0.5 bg-indigo-400 shadow-[0_0_10px_#818cf8] animate-[scan_2s_infinite]"></div>
-                </div>
-              </div>
-              <div className="absolute bottom-10 w-full text-center text-white/80 text-sm">
-                Đưa mã QR vị trí vào khung hình
-              </div>
-            </>
-          ) : (
-            <div className="text-center p-6 text-white bg-gray-900 rounded-lg m-4 shadow-xl border border-gray-700">
-              <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
-              <p className="mb-6 text-lg">{errorMsg}</p>
-              <button
-                onClick={requestCameraPermission}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 mx-auto shadow-lg transition-transform active:scale-95"
-              >
-                <Camera size={20} /> Cấp quyền Camera
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 };
@@ -2431,56 +2429,73 @@ export default function App() {
 
   const isOnline = useNetworkStatus(showNotification);
 
-  // --- LOGIC TÍNH TOÁN SƠ ĐỒ KHO (Moved from Child to Parent) ---
+  // --- LOGIC TÍNH TOÁN SƠ ĐỒ KHO ---
   const mapData = useMemo(() => {
     const data = {};
     // 1. Khởi tạo các vị trí
     locations.forEach((loc) => {
       data[loc] = [];
     });
-    // 2. Quét qua từng sản phẩm để tính tồn kho tại các vị trí
+
+    // --- FIX: KHỬ TRÙNG LẶP SẢN PHẨM TRƯỚC KHI TÍNH TOÁN ---
+    const processedKeys = new Set();
+    const uniqueProducts = [];
+
     products.forEach((p) => {
+      const key = `${normalize(p.sku)}|${normalize(p.style)}|${normalize(
+        p.color
+      )}|${normalize(p.size)}|${normalize(p.po)}`;
+      if (!processedKeys.has(key)) {
+        processedKeys.add(key);
+        uniqueProducts.push(p);
+      }
+    });
+
+    // 2. Quét qua từng sản phẩm để tính tồn kho và +/- KH
+    uniqueProducts.forEach((p) => {
       const stockByLoc = calculateStockByLocation(p, history);
+
+      // Tính +/- KH cho sản phẩm này
+      // FIX V3.6: parse float, allow dot
+      const ncValue =
+        parseFloat(String(p.cartonNC || "0").replace(/[^0-9.]/g, "")) || 0;
+      const currentTotalImport = calculateTotalImport(p, history);
+      // New Logic: Import - NC
+      const rawDiff = currentTotalImport - ncValue;
+      const planDiff = ncValue > 0 ? rawDiff.toFixed(2) : "-";
+
       Object.entries(stockByLoc).forEach(([loc, qty]) => {
         if (qty > 0 && locations.includes(loc)) {
-          data[loc].push({ ...p, stock: qty });
+          // Thêm thuộc tính planDiff vào item để hiển thị trên Map
+          data[loc].push({ ...p, stock: qty, planDiff: planDiff });
         }
       });
     });
     return data;
   }, [products, history, locations]);
 
-  // --- LOGIC XỬ LÝ SCAN QR (UPDATED) ---
+  // --- LOGIC XỬ LÝ SCAN QR ---
   const handleScan = (code) => {
     if (code) {
-      // 1. QUAN TRỌNG: Đóng scanner ngay lập tức để tránh loop
       setShowScanner(false);
 
-      if (code.toLowerCase().startsWith("khovo:")) {
-        // Lấy tên vị trí sau tiền tố
-        const locName = code.substring(6).trim(); // "khovo:".length === 6
+      if (code.text && code.text.toLowerCase().startsWith("khovo:")) {
+        code = code.text;
+      }
 
+      if (typeof code === "string" && code.toLowerCase().startsWith("khovo:")) {
+        const locName = code.substring(6).trim();
         if (locations.includes(locName)) {
-          // 2. Chuyển tab sang map
           setActiveTab("map");
-          // 3. Set vị trí đang chọn để mở modal
           const items = mapData[locName] || [];
           setSelectedLoc({ name: locName, items });
-
           showNotification("success", `Đã tìm thấy vị trí: ${locName}`);
         } else {
-          // Nếu có tiền tố đúng nhưng tên vị trí không tồn tại -> Báo lỗi và đã tắt scanner
           showNotification(
             "error",
             `Vị trí "${locName}" chưa được khai báo trong hệ thống!`
           );
         }
-      } else {
-        // Nếu mã không đúng định dạng (không có khovo:) -> Báo lỗi và đã tắt scanner
-        showNotification(
-          "error",
-          "Mã QR không hợp lệ (Phải bắt đầu bằng 'khovo:')"
-        );
       }
     }
   };
@@ -2488,8 +2503,6 @@ export default function App() {
   const handleLocationsChange = async (newLocs) => {
     setLocations(newLocs);
     localStorage.setItem("warehouseLocations", JSON.stringify(newLocs));
-
-    // --- GỬI DANH SÁCH MỚI LÊN SHEET ---
     await postToSheet({
       action: "update_locations",
       locations: newLocs,
@@ -2501,6 +2514,7 @@ export default function App() {
     localStorage.setItem("warehousePartners", JSON.stringify(newPartners));
   };
 
+  // ... (Các hàm Auth giữ nguyên) ...
   const handleAdminLogin = (inputPass) => {
     if (inputPass === adminPassword) {
       setIsAdmin(true);
@@ -2509,12 +2523,10 @@ export default function App() {
     showNotification("error", "Mật mã không đúng!");
     return false;
   };
-
   const handleAdminLogout = () => {
     setIsAdmin(false);
     showNotification("info", "Đã thoát chế độ Admin.");
   };
-
   const handleChangePassword = async (newPass) => {
     setAdminPassword(newPass);
     localStorage.setItem("warehouseAdminPassword", newPass);
@@ -2522,14 +2534,8 @@ export default function App() {
       action: "update_password",
       password: newPass,
     });
-    if (success) {
-      showNotification("success", "Đã lưu mật mã mới lên hệ thống!");
-    } else {
-      showNotification(
-        "warning",
-        "Đã lưu trên máy này nhưng lỗi đồng bộ. Hãy kiểm tra mạng."
-      );
-    }
+    if (success) showNotification("success", "Đã lưu mật mã mới!");
+    else showNotification("warning", "Lỗi đồng bộ mật mã.");
   };
 
   const handleSyncData = useCallback(
@@ -2573,7 +2579,6 @@ export default function App() {
           );
         }
 
-        // --- ĐỒNG BỘ DANH SÁCH VỊ TRÍ TỪ SHEET ---
         if (
           data.locations &&
           Array.isArray(data.locations) &&
@@ -2725,25 +2730,18 @@ export default function App() {
     });
     setHistory(updatedHistory);
     localStorage.setItem("warehouseHistory", JSON.stringify(updatedHistory));
-
-    showNotification("info", "Đang cập nhật vị trí trên Sheet...");
-
-    const success = await postToSheet({
+    // showNotification("info", "Đang cập nhật vị trí trên Sheet...");
+    await postToSheet({
       action: "update_location_history",
       ...itemToUpdate,
       oldLocation: oldLoc,
       newLocation: newLoc,
     });
-
-    if (success) showNotification("success", "Đã cập nhật vị trí thành công!");
+    // if (success) showNotification("success", "Đã cập nhật vị trí thành công!");
   };
 
   const handleTransaction = async (selectedProduct, formData) => {
     setLoading(true);
-    const combinedNote = formData.partner
-      ? `${formData.partner} | ${formData.note}`
-      : formData.note;
-
     const dataToSend = {
       action: "transaction",
       date: formData.date,
@@ -2760,8 +2758,9 @@ export default function App() {
       cartonSize: selectedProduct.cartonSize,
       cartonNC: selectedProduct.cartonNC,
       quantity: formData.quantity,
-      locationOrReceiver: formData.locationOrReceiver,
-      note: combinedNote,
+      locationOrReceiver: formData.locationOrReceiver || "",
+      note: formData.note || "",
+      partner: formData.partner || "",
     };
     const success = await postToSheet(dataToSend);
     setLoading(false);
@@ -2770,22 +2769,32 @@ export default function App() {
       setHistory(newHistory);
       localStorage.setItem("warehouseHistory", JSON.stringify(newHistory));
       if (activeTab === "input" && formData.locationOrReceiver) {
-        handleUpdateLocation(selectedProduct, formData.locationOrReceiver);
+        // Cập nhật vị trí hiển thị ngay lập tức (optimistic UI)
+        const updatedProducts = products.map((p) => {
+          if (
+            p.sku === selectedProduct.sku &&
+            p.po === selectedProduct.po &&
+            p.size === selectedProduct.size
+          ) {
+            return { ...p, location: formData.locationOrReceiver };
+          }
+          return p;
+        });
+        setProducts(updatedProducts);
+        localStorage.setItem(
+          "warehouseProducts",
+          JSON.stringify(updatedProducts)
+        );
       }
       showNotification("success", "Thành công!");
     }
   };
 
-  // --- NEW: Handle Batch Export ---
   const handleBatchTransaction = async (items, location, partner, date) => {
     setLoading(true);
     const newTransactions = [];
     let successCount = 0;
-
     for (const item of items) {
-      const combinedNote = partner
-        ? `${partner} | Xuất nhanh từ sơ đồ`
-        : "Xuất nhanh từ sơ đồ";
       const dataToSend = {
         action: "transaction",
         date: date,
@@ -2802,18 +2811,16 @@ export default function App() {
         cartonSize: item.cartonSize,
         cartonNC: item.cartonNC,
         quantity: item.exportQty,
-        locationOrReceiver: location, // Xuất từ vị trí này
-        note: combinedNote,
+        locationOrReceiver: location || "",
+        note: "",
+        partner: partner || "",
       };
-
-      // Gửi từng request để đảm bảo an toàn dữ liệu
       const success = await postToSheet(dataToSend);
       if (success) {
         newTransactions.push(dataToSend);
         successCount++;
       }
     }
-
     setLoading(false);
     if (newTransactions.length > 0) {
       const updatedHistory = [...newTransactions, ...history];
@@ -2826,11 +2833,110 @@ export default function App() {
     }
   };
 
-  // --- NEW: Handle Navigate to Export Tab ---
+  // --- CẢI TIẾN: CHUYỂN KHO HÀNG LOẠT ---
+  const handleBatchMoveLocation = async (items, oldLoc, newLoc) => {
+    setLoading(true);
+    let successCount = 0;
+
+    // Tạo bản sao history để cập nhật UI ngay lập tức
+    let updatedHistory = [...history];
+
+    for (const item of items) {
+      // Cập nhật history cục bộ
+      updatedHistory = updatedHistory.map((h) => {
+        if (
+          h.type === "NHẬP" &&
+          normalize(h.sku) === normalize(item.sku) &&
+          normalize(h.po) === normalize(item.po) &&
+          normalize(h.size) === normalize(item.size) &&
+          h.locationOrReceiver === oldLoc
+        ) {
+          return { ...h, locationOrReceiver: newLoc };
+        }
+        return h;
+      });
+
+      // Gửi request lên Sheet
+      await postToSheet({
+        action: "update_location_history",
+        ...item,
+        oldLocation: oldLoc,
+        newLocation: newLoc,
+      });
+      successCount++;
+    }
+
+    setHistory(updatedHistory);
+    localStorage.setItem("warehouseHistory", JSON.stringify(updatedHistory));
+    setLoading(false);
+    showNotification("success", `Đã chuyển ${successCount} mục sang ${newLoc}`);
+  };
+
+  // --- NEW FEATURE: Sửa tồn kho hàng loạt (Batch Stock Edit) ---
+  const handleBatchStockUpdate = async (items, location, newQuantities) => {
+    setLoading(true);
+    let successCount = 0;
+
+    const newTransactions = [];
+
+    for (const item of items) {
+      const itemKey = `${item.sku}-${item.po}-${item.size}`;
+      const newQty = parseInt(newQuantities[itemKey]);
+      const oldQty = item.stock;
+
+      if (isNaN(newQty) || newQty === oldQty) continue;
+
+      const diff = newQty - oldQty;
+      // Nếu diff > 0 -> Cần NHẬP thêm
+      // Nếu diff < 0 -> Cần XUẤT bớt
+      const type = diff > 0 ? "NHẬP" : "XUẤT";
+      const quantity = Math.abs(diff);
+
+      const dataToSend = {
+        action: "transaction",
+        date: new Date().toISOString().split("T")[0],
+        type: type,
+        sku: item.sku,
+        style: item.style,
+        color: item.color,
+        unit: item.unit,
+        po: item.po,
+        shipdate: item.shipdate,
+        poQty: item.poQty,
+        size: item.size,
+        masterBoxQty: item.masterBoxQty,
+        cartonSize: item.cartonSize,
+        cartonNC: item.cartonNC,
+        quantity: quantity,
+        locationOrReceiver: location,
+        note: `Điều chỉnh tồn kho: ${oldQty} -> ${newQty}`,
+        partner: "Kiểm kê",
+      };
+
+      const success = await postToSheet(dataToSend);
+      if (success) {
+        newTransactions.push(dataToSend);
+        successCount++;
+      }
+    }
+
+    if (newTransactions.length > 0) {
+      const finalHistory = [...newTransactions, ...history];
+      setHistory(finalHistory);
+      localStorage.setItem("warehouseHistory", JSON.stringify(finalHistory));
+      showNotification(
+        "success",
+        `Đã cập nhật tồn kho cho ${successCount} mục!`
+      );
+    } else {
+      showNotification("info", "Không có thay đổi nào được lưu.");
+    }
+    setLoading(false);
+  };
+
   const handleNavigateExport = (item, location) => {
     setPrefillExportData({ item, location });
     setActiveTab("output");
-    // Reset prefill data sau khi đã switch tab (useEffect trong TransactionView sẽ bắt)
     setTimeout(() => setPrefillExportData(null), 500);
   };
 
@@ -2847,11 +2953,10 @@ export default function App() {
         isSyncing={isSyncing}
         syncStatus={syncStatus}
         isAdmin={isAdmin}
-        onToggleScanner={() => setShowScanner(true)} // Toggle Scanner Modal
+        onToggleScanner={() => setShowScanner(true)}
       />
       <NotificationToast notification={notification} />
 
-      {/* SCANNER MODAL */}
       {showScanner && (
         <QRScannerModal
           onClose={() => setShowScanner(false)}
@@ -2882,30 +2987,26 @@ export default function App() {
             partners={partners}
             onLocationsChange={handleLocationsChange}
             onPartnersChange={handlePartnersChange}
-            prefillData={prefillExportData} // Pass prefill data
-            onClearPrefill={handleClearPrefill} // Pass clearer
+            prefillData={prefillExportData}
+            onClearPrefill={handleClearPrefill}
           />
         )}
-        {activeTab === "inventory" && (
-          <InventoryView
-            products={products}
-            history={history}
-            onDeleteProduct={handleDeleteProduct}
-            onUpdateLocation={handleUpdateLocation}
-            isAdmin={isAdmin}
-            onAdminLogin={handleAdminLogin}
-            onAdminLogout={handleAdminLogout}
-          />
-        )}
+
+        {/* ĐÃ BỎ TAB INVENTORY (LIST TỒN) */}
+
         {activeTab === "map" && (
           <WarehouseVisualView
-            // Truyền props từ App xuống thay vì tính toán bên trong
             mapData={mapData}
             selectedLoc={selectedLoc}
             onSelectLoc={setSelectedLoc}
-            onNavigateExport={handleNavigateExport} // New prop for jumping to export
-            partners={partners} // For batch export modal
-            onBatchExport={handleBatchTransaction} // For batch export logic
+            onNavigateExport={handleNavigateExport}
+            partners={partners}
+            onBatchExport={handleBatchTransaction}
+            // Props mới cho chuyển kho
+            locations={locations}
+            onBatchMove={handleBatchMoveLocation}
+            // Prop mới cho sửa tồn kho
+            onBatchStockUpdate={handleBatchStockUpdate}
           />
         )}
         {activeTab === "history" && (
