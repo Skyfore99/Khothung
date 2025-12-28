@@ -46,6 +46,8 @@ import {
   AlertTriangle,
   MoveRight,
   Users,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 import QrScanner from "react-qr-scanner";
@@ -154,10 +156,10 @@ function doPost(e) {
     var action = data.action;
 
     var safeStr = function(val) {
-         if (val === undefined || val === null) return "";
-         var s = String(val).trim();
-         if (s === "undefined" || s === "null") return "";
-         return s;
+          if (val === undefined || val === null) return "";
+          var s = String(val).trim();
+          if (s === "undefined" || s === "null") return "";
+          return s;
     };
 
     if (action === 'transaction') {
@@ -1063,12 +1065,17 @@ const WarehouseVisualView = ({
           const totalQty = items.reduce((sum, item) => sum + item.stock, 0);
           const itemCount = items.length;
 
+          // Logic riêng cho "Hàng chưa có vị trí" để nổi bật
+          const isUnassigned = loc === "Hàng chưa có vị trí";
+
           return (
             <div
               key={loc}
               onClick={() => onSelectLoc({ name: loc, items })}
               className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-lg active:scale-95 flex flex-col justify-between h-32 ${
-                itemCount > 0
+                isUnassigned
+                  ? "bg-amber-50 border-amber-300 hover:border-amber-500" // Màu khác cho unassigned
+                  : itemCount > 0
                   ? "bg-emerald-50 border-emerald-200 hover:border-emerald-400"
                   : "bg-gray-50 border-gray-100 hover:border-gray-300 opacity-70"
               }`}
@@ -1076,25 +1083,41 @@ const WarehouseVisualView = ({
               <div className="flex justify-between items-start">
                 <span
                   className={`font-bold text-lg truncate ${
-                    itemCount > 0 ? "text-emerald-800" : "text-gray-400"
+                    isUnassigned
+                      ? "text-amber-800"
+                      : itemCount > 0
+                      ? "text-emerald-800"
+                      : "text-gray-400"
                   }`}
                 >
                   {loc}
                 </span>
-                {itemCount > 0 && <Box className="text-emerald-300 w-8 h-8" />}
+                {isUnassigned ? (
+                  <AlertTriangle className="text-amber-500 w-8 h-8" />
+                ) : itemCount > 0 ? (
+                  <Box className="text-emerald-300 w-8 h-8" />
+                ) : null}
               </div>
 
               <div className="mt-2">
                 {itemCount > 0 ? (
                   <div>
-                    <div className="text-2xl font-bold text-emerald-700">
+                    <div
+                      className={`text-2xl font-bold ${
+                        isUnassigned ? "text-amber-700" : "text-emerald-700"
+                      }`}
+                    >
                       {totalQty}{" "}
                       <span className="text-xs font-normal text-gray-500">
                         sp
                       </span>
                     </div>
-                    <div className="text-xs text-emerald-600 font-medium">
-                      {itemCount} loại hàng (đã lọc)
+                    <div
+                      className={`text-xs font-medium ${
+                        isUnassigned ? "text-amber-600" : "text-emerald-600"
+                      }`}
+                    >
+                      {itemCount} loại hàng
                     </div>
                   </div>
                 ) : (
@@ -1410,9 +1433,11 @@ const WarehouseVisualView = ({
                       <th className="p-3 w-10 text-center"></th>
                       {/* Bỏ cột Mã hàng */}
                       <th className="p-3">Style</th>
-                      <th className="p-3 hidden sm:table-cell">Màu</th>
+                      {/* ĐÃ BỎ "hidden sm:table-cell" ĐỂ HIỆN TRÊN MOBILE */}
+                      <th className="p-3">Màu</th>
+                      <th className="p-3">Đơn</th>
                       <th className="p-3">PO</th>
-                      <th className="p-3 hidden sm:table-cell">Size</th>
+                      {/* Bỏ cột Size */}
                       <th className="p-3 text-right">Tồn Kho</th>
                       {/* Thêm cột +/- KH */}
                       <th className="p-3 text-right">+/- KH</th>
@@ -1462,17 +1487,15 @@ const WarehouseVisualView = ({
                           </td>
                           {/* Bỏ cột SKU */}
                           <td className="p-3 font-medium">{item.style}</td>
-                          <td className="p-3 hidden sm:table-cell">
-                            {item.color}
-                          </td>
+                          {/* ĐÃ BỎ "hidden sm:table-cell" ĐỂ HIỆN TRÊN MOBILE */}
+                          <td className="p-3">{item.color}</td>
+                          <td className="p-3">{item.unit}</td>
                           <td className="p-3">
                             <span className="bg-gray-100 px-2 py-0.5 rounded text-xs border border-gray-300">
                               {item.po}
                             </span>
                           </td>
-                          <td className="p-3 hidden sm:table-cell">
-                            {item.size}
-                          </td>
+                          {/* Bỏ cột Size */}
                           <td className="p-3 text-right font-bold text-lg text-emerald-700">
                             {item.stock}
                           </td>
@@ -2185,72 +2208,180 @@ const TransactionView = ({
   );
 };
 
-const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => (
-  <div className="bg-white rounded-xl shadow-md p-6">
-    <h2 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2">
-      Nhật Ký Nhập Xuất (Gần đây)
-    </h2>
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm text-left">
-        <thead className="bg-gray-100 text-gray-600">
-          <tr>
-            <th className="p-3">Ngày</th>
-            <th className="p-3">Loại</th>
-            <th className="p-3">Mã hàng</th>
-            <th className="p-3">Style</th>
-            <th className="p-3 text-right">SL</th>
-            <th className="p-3">Vị trí</th>
-            {/* THÊM CỘT ĐỐI TÁC HIỂN THỊ RIÊNG */}
-            <th className="p-3">Đối tác</th>
-            <th className="p-3">Ghi chú</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y">
-          {history.slice(0, 100).map((h, i) => (
-            <tr key={i} className="hover:bg-gray-50 group">
-              <td className="p-3 text-gray-600">{formatDateDisplay(h.date)}</td>
-              <td className="p-3">
-                <span
-                  className={`text-xs font-bold px-2 py-1 rounded ${
-                    h.type === "NHẬP"
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-orange-100 text-orange-700"
-                  }`}
-                >
-                  {h.type}
-                </span>
-              </td>
-              <td className="p-3 font-mono">{h.sku}</td>
-              <td className="p-3">{h.style}</td>
-              <td className="p-3 text-right font-bold">{h.quantity}</td>
-              <td className="p-3 text-gray-600 truncate max-w-[150px]">
-                {h.locationOrReceiver}
-              </td>
-              <td className="p-3 text-indigo-600 font-medium truncate max-w-[100px]">
-                {h.partner || "-"}
-              </td>
-              <td className="p-3 text-gray-500 text-xs italic truncate max-w-[150px]">
-                {h.note}
-              </td>
-              <td className="p-3 text-right">
-                {/* BUTTON DELETE - NỔI KHỐI TO HƠN */}
-                {isAdmin && (
-                  <button
-                    onClick={() => onDeleteHistoryItem(i)}
-                    className="bg-red-100 hover:bg-red-200 text-red-600 p-2 rounded-lg shadow-md border border-red-200 transition-all active:scale-95 flex items-center justify-center w-8 h-8"
-                    title="Xóa phiếu này (trên App)"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                )}
-              </td>
+// --- UPDATED HISTORY VIEW (WITH FILTER & PAGINATION) ---
+const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => {
+  const [page, setPage] = useState(1);
+  const [filterCode, setFilterCode] = useState(""); // Lọc theo mã/style
+  const [filterColor, setFilterColor] = useState(""); // Lọc theo màu
+  const pageSize = 50;
+
+  // Reset về trang 1 khi filter thay đổi
+  useEffect(() => {
+    setPage(1);
+  }, [filterCode, filterColor]);
+
+  // Logic lọc dữ liệu
+  const filteredHistory = useMemo(() => {
+    return history.filter((h) => {
+      const fCode = normalize(filterCode);
+      const fColor = normalize(filterColor);
+
+      const matchCode =
+        !fCode ||
+        normalize(h.sku).includes(fCode) ||
+        normalize(h.style).includes(fCode);
+      const matchColor = !fColor || normalize(h.color).includes(fColor);
+
+      return matchCode && matchColor;
+    });
+  }, [history, filterCode, filterColor]);
+
+  // Logic phân trang
+  const totalPages = Math.ceil(filteredHistory.length / pageSize);
+  const currentData = filteredHistory.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
+
+  return (
+    <div className="bg-white rounded-xl shadow-md p-6">
+      <h2 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2">
+        Nhật Ký Nhập Xuất
+      </h2>
+
+      {/* --- FILTER INPUTS --- */}
+      <div className="flex gap-4 mb-4 flex-wrap">
+        <div className="flex-1 min-w-[200px]">
+          <input
+            placeholder="Lọc theo Mã hoặc Style..."
+            className="border p-2 rounded w-full text-sm outline-none focus:ring-2 focus:ring-blue-300"
+            value={filterCode}
+            onChange={(e) => setFilterCode(e.target.value)}
+          />
+        </div>
+        <div className="flex-1 min-w-[150px]">
+          <input
+            placeholder="Lọc theo Màu..."
+            className="border p-2 rounded w-full text-sm outline-none focus:ring-2 focus:ring-blue-300"
+            value={filterColor}
+            onChange={(e) => setFilterColor(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-gray-100 text-gray-600">
+            <tr>
+              <th className="p-3">Ngày</th>
+              <th className="p-3">Loại</th>
+              {/* BỎ CỘT MÃ HÀNG */}
+              <th className="p-3">Style</th>
+              {/* THÊM CỘT MÀU & ĐƠN SAU STYLE */}
+              <th className="p-3">Màu</th>
+              <th className="p-3">Đơn</th>
+              <th className="p-3 text-right">SL</th>
+              <th className="p-3">Vị trí</th>
+              <th className="p-3">Đối tác</th>
+              <th className="p-3">Ghi chú</th>
+              <th className="p-3 text-right"></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y">
+            {currentData.length === 0 && (
+              <tr>
+                <td
+                  colSpan="10"
+                  className="p-4 text-center text-gray-400 italic"
+                >
+                  Không có dữ liệu phù hợp.
+                </td>
+              </tr>
+            )}
+            {currentData.map((h, i) => (
+              <tr key={i} className="hover:bg-gray-50 group">
+                <td className="p-3 text-gray-600">
+                  {formatDateDisplay(h.date)}
+                </td>
+                <td className="p-3">
+                  <span
+                    className={`text-xs font-bold px-2 py-1 rounded ${
+                      h.type === "NHẬP"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-orange-100 text-orange-700"
+                    }`}
+                  >
+                    {h.type}
+                  </span>
+                </td>
+                {/* BỎ CỘT MÃ HÀNG (SKU) */}
+                <td className="p-3 font-medium">{h.style}</td>
+                {/* HIỂN THỊ MÀU & ĐƠN */}
+                <td className="p-3 text-gray-600">{h.color}</td>
+                <td className="p-3 text-gray-500 text-xs">{h.unit}</td>
+
+                <td className="p-3 text-right font-bold">{h.quantity}</td>
+                <td className="p-3 text-gray-600 truncate max-w-[150px]">
+                  {h.locationOrReceiver}
+                </td>
+                <td className="p-3 text-indigo-600 font-medium truncate max-w-[100px]">
+                  {h.partner || "-"}
+                </td>
+                <td className="p-3 text-gray-500 text-xs italic truncate max-w-[150px]">
+                  {h.note}
+                </td>
+                <td className="p-3 text-right">
+                  {isAdmin && (
+                    <button
+                      onClick={() => onDeleteHistoryItem(i)}
+                      className="bg-red-100 hover:bg-red-200 text-red-600 p-2 rounded-lg shadow-md border border-red-200 transition-all active:scale-95 flex items-center justify-center w-8 h-8"
+                      title="Xóa phiếu này (trên App)"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* --- PAGINATION CONTROLS --- */}
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center mt-4 border-t pt-4">
+          <button
+            disabled={page === 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded border ${
+              page === 1
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <ChevronLeft size={16} /> Trước
+          </button>
+
+          <span className="text-sm text-gray-600">
+            Trang <strong>{page}</strong> / {totalPages}
+          </span>
+
+          <button
+            disabled={page === totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded border ${
+              page === totalPages
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            Sau <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 const SettingsHelpView = ({
   activeTab,
@@ -2596,10 +2727,14 @@ export default function App() {
   // --- LOGIC TÍNH TOÁN SƠ ĐỒ KHO (Moved from Child to Parent) ---
   const mapData = useMemo(() => {
     const data = {};
+    const UNASSIGNED_LOC = "Hàng chưa có vị trí";
+
     // 1. Khởi tạo các vị trí
     locations.forEach((loc) => {
       data[loc] = [];
     });
+    // Luôn luôn tạo vị trí "Hàng chưa có vị trí"
+    data[UNASSIGNED_LOC] = [];
 
     // --- FIX: KHỬ TRÙNG LẶP SẢN PHẨM TRƯỚC KHI TÍNH TOÁN (Tránh lỗi x2 trên Map) ---
     const processedKeys = new Set();
@@ -2630,9 +2765,14 @@ export default function App() {
       const planDiff = ncValue > 0 ? rawDiff.toFixed(2) : "-";
 
       Object.entries(stockByLoc).forEach(([loc, qty]) => {
-        if (qty > 0 && locations.includes(loc)) {
-          // Thêm thuộc tính planDiff vào item để hiển thị trên Map
-          data[loc].push({ ...p, stock: qty, planDiff: planDiff });
+        if (qty > 0) {
+          if (locations.includes(loc)) {
+            // Thêm thuộc tính planDiff vào item để hiển thị trên Map
+            data[loc].push({ ...p, stock: qty, planDiff: planDiff });
+          } else if (loc === "Chưa set" || !loc) {
+            // Đưa vào nhóm chưa có vị trí nếu location là "Chưa set" hoặc rỗng
+            data[UNASSIGNED_LOC].push({ ...p, stock: qty, planDiff: planDiff });
+          }
         }
       });
     });
