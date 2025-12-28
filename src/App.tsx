@@ -943,10 +943,32 @@ const WarehouseVisualView = ({
   }, [mapData, styleFilter, colorFilter, poFilter]);
 
   const toggleSelection = (item) => {
-    const itemKey = `${item.sku}-${item.po}-${item.size}`;
-    if (selectedItems.find((i) => `${i.sku}-${i.po}-${i.size}` === itemKey)) {
+    // FIX: Compare ALL fields to avoid selecting wrong item
+    const itemKey = `${normalize(item.sku)}|${normalize(
+      item.style
+    )}|${normalize(item.color)}|${normalize(item.unit)}|${normalize(
+      item.po
+    )}|${normalize(item.shipdate)}|${normalize(item.size)}`;
+
+    if (
+      selectedItems.find((i) => {
+        const iKey = `${normalize(i.sku)}|${normalize(i.style)}|${normalize(
+          i.color
+        )}|${normalize(i.unit)}|${normalize(i.po)}|${normalize(
+          i.shipdate
+        )}|${normalize(i.size)}`;
+        return iKey === itemKey;
+      })
+    ) {
       setSelectedItems(
-        selectedItems.filter((i) => `${i.sku}-${i.po}-${i.size}` !== itemKey)
+        selectedItems.filter((i) => {
+          const iKey = `${normalize(i.sku)}|${normalize(i.style)}|${normalize(
+            i.color
+          )}|${normalize(i.unit)}|${normalize(i.po)}|${normalize(
+            i.shipdate
+          )}|${normalize(i.size)}`;
+          return iKey !== itemKey;
+        })
       );
     } else {
       setSelectedItems([...selectedItems, item]);
@@ -962,7 +984,12 @@ const WarehouseVisualView = ({
     }
     const itemsToExport = selectedItems
       .map((item) => {
-        const itemKey = `${item.sku}-${item.po}-${item.size}`;
+        // FIX: Key must match toggleSelection
+        const itemKey = `${normalize(item.sku)}|${normalize(
+          item.style
+        )}|${normalize(item.color)}|${normalize(item.unit)}|${normalize(
+          item.po
+        )}|${normalize(item.shipdate)}|${normalize(item.size)}`;
         return {
           ...item,
           exportQty: batchQuantities[itemKey] || 0,
@@ -1312,7 +1339,13 @@ const WarehouseVisualView = ({
                     </thead>
                     <tbody>
                       {selectedItems.map((item, idx) => {
-                        const itemKey = `${item.sku}-${item.po}-${item.size}`;
+                        const itemKey = `${normalize(item.sku)}|${normalize(
+                          item.style
+                        )}|${normalize(item.color)}|${normalize(
+                          item.unit
+                        )}|${normalize(item.po)}|${normalize(
+                          item.shipdate
+                        )}|${normalize(item.size)}`;
                         return (
                           <tr key={idx} className="border-t">
                             <td className="p-2">
@@ -1426,7 +1459,13 @@ const WarehouseVisualView = ({
                     </thead>
                     <tbody>
                       {selectedItems.map((item, idx) => {
-                        const itemKey = `${item.sku}-${item.po}-${item.size}`;
+                        const itemKey = `${normalize(item.sku)}|${normalize(
+                          item.style
+                        )}|${normalize(item.color)}|${normalize(
+                          item.unit
+                        )}|${normalize(item.po)}|${normalize(
+                          item.shipdate
+                        )}|${normalize(item.size)}`;
                         return (
                           <tr key={idx} className="border-t">
                             <td className="p-2">
@@ -1496,10 +1535,23 @@ const WarehouseVisualView = ({
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {selectedLoc.items.map((item, idx) => {
-                      const itemKey = `${item.sku}-${item.po}-${item.size}`;
-                      const isSelected = !!selectedItems.find(
-                        (i) => `${i.sku}-${i.po}-${i.size}` === itemKey
-                      );
+                      const itemKey = `${normalize(item.sku)}|${normalize(
+                        item.style
+                      )}|${normalize(item.color)}|${normalize(
+                        item.unit
+                      )}|${normalize(item.po)}|${normalize(
+                        item.shipdate
+                      )}|${normalize(item.size)}`;
+                      const isSelected = !!selectedItems.find((i) => {
+                        const iKey = `${normalize(i.sku)}|${normalize(
+                          i.style
+                        )}|${normalize(i.color)}|${normalize(
+                          i.unit
+                        )}|${normalize(i.po)}|${normalize(
+                          i.shipdate
+                        )}|${normalize(i.size)}`;
+                        return iKey === itemKey;
+                      });
 
                       // Màu sắc cho cột +/- KH
                       const planDiff = item.planDiff;
@@ -1936,12 +1988,30 @@ const TransactionView = ({
     e.preventDefault();
     if (!selected) return;
 
-    if (!locations.includes(form.locationOrReceiver)) {
-      alert(
-        "Lỗi: Vị trí không hợp lệ! Chỉ được nhập các vị trí có trong danh sách."
-      );
-      return;
+    // LOGIC VALIDATION LOCATION MỚI
+    if (activeTab === "input") {
+      // Nhập kho: Cho phép trống (Hàng chưa có vị trí)
+      // Nếu có nhập (khác rỗng) thì phải nằm trong danh sách locations
+      if (
+        form.locationOrReceiver &&
+        !locations.includes(form.locationOrReceiver)
+      ) {
+        alert(
+          "Lỗi: Vị trí không hợp lệ! Vui lòng chọn trong danh sách hoặc để trống."
+        );
+        return;
+      }
+    } else {
+      // Xuất kho: Bắt buộc phải có trong danh sách (để trừ kho)
+      // Lưu ý: locations.includes("") là false, nên check này đã bao gồm check rỗng
+      if (!locations.includes(form.locationOrReceiver)) {
+        alert(
+          "Lỗi: Vị trí không hợp lệ! Chỉ được nhập các vị trí có trong danh sách."
+        );
+        return;
+      }
     }
+
     // ĐÃ BỎ CẢNH BÁO NC THÙNG
     processSubmit();
   };
@@ -2051,46 +2121,57 @@ const TransactionView = ({
             </div>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {filtered.slice(0, 50).map((p, idx) => (
-                <li
-                  key={idx}
-                  onClick={() => setSelected(p)}
-                  className={`p-3 cursor-pointer hover:bg-blue-50 transition-colors flex justify-between items-center ${
-                    selected?.sku === p.sku &&
-                    selected?.po === p.po &&
-                    selected?.size === p.size
-                      ? "bg-blue-100 ring-2 ring-inset ring-blue-400"
-                      : ""
-                  }`}
-                >
-                  <div className="w-full">
-                    {/* CẢI TIẾN 1: STYLE VÀ PO TO Ở TRÊN */}
-                    <div className="font-bold text-gray-800 text-lg flex justify-between items-center">
-                      <span className="truncate">{p.style}</span>
-                      <span className="text-sm bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded ml-2 whitespace-nowrap">
-                        PO: {p.po}
-                      </span>
+              {filtered.slice(0, 50).map((p, idx) => {
+                // FIX: Compare ALL fields to avoid selecting wrong item
+                const isSelected =
+                  selected &&
+                  normalize(selected.sku) === normalize(p.sku) &&
+                  normalize(selected.style) === normalize(p.style) &&
+                  normalize(selected.color) === normalize(p.color) &&
+                  normalize(selected.unit) === normalize(p.unit) &&
+                  normalize(selected.po) === normalize(p.po) &&
+                  normalize(selected.shipdate) === normalize(p.shipdate) &&
+                  normalize(selected.size) === normalize(p.size);
+
+                return (
+                  <li
+                    key={idx}
+                    onClick={() => setSelected(p)}
+                    className={`p-3 cursor-pointer hover:bg-blue-50 transition-colors flex justify-between items-center ${
+                      isSelected
+                        ? "bg-blue-100 ring-2 ring-inset ring-blue-400"
+                        : ""
+                    }`}
+                  >
+                    <div className="w-full">
+                      {/* CẢI TIẾN 1: STYLE VÀ PO TO Ở TRÊN */}
+                      <div className="font-bold text-gray-800 text-lg flex justify-between items-center">
+                        <span className="truncate">{p.style}</span>
+                        <span className="text-sm bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded ml-2 whitespace-nowrap">
+                          PO: {p.po}
+                        </span>
+                      </div>
+                      {/* THÔNG TIN KHÁC Ở DƯỚI */}
+                      <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-2">
+                        <span className="text-gray-700">Màu: {p.color}</span>
+                        <span>|</span>
+                        <span>Đơn: {p.unit}</span>
+                        <span>|</span>
+                        <span>Size: {p.size}</span>
+                        <span>|</span>
+                        <span>NC: {p.cartonNC || "-"}</span>
+                      </div>
                     </div>
-                    {/* THÔNG TIN KHÁC Ở DƯỚI */}
-                    <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-2">
-                      <span className="text-gray-700">Màu: {p.color}</span>
-                      <span>|</span>
-                      <span>Đơn: {p.unit}</span>
-                      <span>|</span>
-                      <span>Size: {p.size}</span>
-                      <span>|</span>
-                      <span>NC: {p.cartonNC || "-"}</span>
+                    <div className="text-gray-400 ml-2">
+                      {isSelected ? (
+                        <CheckCircle size={24} className="text-blue-600" />
+                      ) : (
+                        <Plus size={20} />
+                      )}
                     </div>
-                  </div>
-                  <div className="text-gray-400 ml-2">
-                    {selected?.sku === p.sku && selected?.po === p.po ? (
-                      <CheckCircle size={24} className="text-blue-600" />
-                    ) : (
-                      <Plus size={20} />
-                    )}
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
               {filtered.length > 50 && (
                 <li className="p-4 text-center text-sm text-gray-500">
                   Đang hiển thị 50 / {filtered.length} kết quả. Hãy nhập thêm
@@ -2170,7 +2251,11 @@ const TransactionView = ({
             </div>
 
             <ConfigurableSelect
-              label={activeTab === "input" ? "Vị trí  " : "Xuất từ Vị trí "}
+              label={
+                activeTab === "input"
+                  ? "Vị trí (Để trống = Chưa xếp)"
+                  : "Xuất từ Vị trí "
+              }
               value={form.locationOrReceiver}
               onChange={(val) =>
                 setForm((prev) => ({ ...prev, locationOrReceiver: val }))
@@ -2178,9 +2263,11 @@ const TransactionView = ({
               options={locations}
               onOptionsChange={onLocationsChange}
               placeholder={
-                activeTab === "input" ? "Chọn vị trí..." : "Chọn vị trí xuất..."
+                activeTab === "input"
+                  ? "Chọn vị trí (hoặc để trống)..."
+                  : "Chọn vị trí xuất..."
               }
-              required={true}
+              required={activeTab === "output"}
               allowAdd={false} // QUAN TRỌNG: Chỉ cho chọn, không cho thêm mới tại đây
             />
 
@@ -2753,7 +2840,7 @@ export default function App() {
 
   const isOnline = useNetworkStatus(showNotification);
 
-  // --- LOGIC TÍNH TOÁN SƠ ĐỒ KHO (Moved from Child to Parent) ---
+  // --- LOGIC TÍNH TOÁN SƠ ĐỒ KHO (TỐI ƯU HÓA: Single Pass) ---
   const mapData = useMemo(() => {
     const data = {};
     const UNASSIGNED_LOC = "Hàng chưa có vị trí";
@@ -2765,49 +2852,73 @@ export default function App() {
     // Luôn luôn tạo vị trí "Hàng chưa có vị trí"
     data[UNASSIGNED_LOC] = [];
 
-    // --- FIX: KHỬ TRÙNG LẶP SẢN PHẨM TRƯỚC KHI TÍNH TOÁN (Tránh lỗi x2 trên Map) ---
-    const processedKeys = new Set();
-    const uniqueProducts = [];
+    // 2. Build Lookup Maps từ History (Chỉ duyệt history 1 lần duy nhất)
+    const stockLookup = {}; // key -> { location: qty }
+    const importLookup = {}; // key -> totalImportQty
 
-    products.forEach((p) => {
-      // CHECK FULL INFO để tạo key
-      const key = `${normalize(p.sku)}|${normalize(p.style)}|${normalize(
+    // Helper key generator (Comprehensive Key)
+    const genKey = (p) =>
+      `${normalize(p.sku)}|${normalize(p.style)}|${normalize(
         p.color
       )}|${normalize(p.unit)}|${normalize(p.size)}|${normalize(
         p.po
       )}|${normalize(p.shipdate)}`;
-      if (!processedKeys.has(key)) {
-        processedKeys.add(key);
-        uniqueProducts.push(p);
+
+    history.forEach((h) => {
+      const key = genKey(h);
+
+      // Init if not exists
+      if (!stockLookup[key]) stockLookup[key] = {};
+
+      let loc = h.locationOrReceiver;
+      if (!loc || loc === "undefined" || loc === "null") loc = "Chưa set";
+
+      const qty = parseInt(h.quantity) || 0;
+
+      // Init loc if not exists
+      if (!stockLookup[key][loc]) stockLookup[key][loc] = 0;
+
+      if (h.type === "NHẬP") {
+        stockLookup[key][loc] += qty;
+        // Accumulate total import
+        if (!importLookup[key]) importLookup[key] = 0;
+        importLookup[key] += qty;
+      } else {
+        stockLookup[key][loc] -= qty;
       }
     });
-    // -------------------------------------------------------------------------------
 
-    // 2. Quét qua từng sản phẩm (đã lọc trùng) để tính tồn kho tại các vị trí
-    uniqueProducts.forEach((p) => {
-      const stockByLoc = calculateStockByLocation(p, history);
+    // 3. Duyệt qua danh sách sản phẩm (đã lọc trùng) và lấy dữ liệu từ Lookup Map
+    const processedKeys = new Set();
 
-      // Tính +/- KH cho sản phẩm này
-      // FIX V3.6: parse float, allow dot
+    products.forEach((p) => {
+      const key = genKey(p);
+      if (processedKeys.has(key)) return;
+      processedKeys.add(key);
+
+      // Lấy thông tin đã tính toán trước
+      const itemStockByLoc = stockLookup[key] || {};
+      const currentTotalImport = importLookup[key] || 0;
+
+      // Tính +/- KH
       const ncValue =
         parseFloat(String(p.cartonNC || "0").replace(/[^0-9.]/g, "")) || 0;
-      const currentTotalImport = calculateTotalImport(p, history);
-      // New Logic: Import - NC
       const rawDiff = currentTotalImport - ncValue;
       const planDiff = ncValue > 0 ? rawDiff.toFixed(2) : "-";
 
-      Object.entries(stockByLoc).forEach(([loc, qty]) => {
+      // Phân bổ vào data map
+      Object.entries(itemStockByLoc).forEach(([loc, qty]) => {
         if (qty > 0) {
+          const itemData = { ...p, stock: qty, planDiff: planDiff };
           if (locations.includes(loc)) {
-            // Thêm thuộc tính planDiff vào item để hiển thị trên Map
-            data[loc].push({ ...p, stock: qty, planDiff: planDiff });
+            data[loc].push(itemData);
           } else if (loc === "Chưa set" || !loc) {
-            // Đưa vào nhóm chưa có vị trí nếu location là "Chưa set" hoặc rỗng
-            data[UNASSIGNED_LOC].push({ ...p, stock: qty, planDiff: planDiff });
+            data[UNASSIGNED_LOC].push(itemData);
           }
         }
       });
     });
+
     return data;
   }, [products, history, locations]);
 
@@ -3247,7 +3358,7 @@ export default function App() {
     }
   };
 
-  // --- CẢI TIẾN: CHUYỂN KHO HÀNG LOẠT ---
+  // --- CẢI TIẾN: CHUYỂN KHO HÀNG LOẠT (TỐI ƯU HÓA) ---
   const handleBatchMoveLocation = async (items, oldLoc, newLoc) => {
     // FIX V4.1: Kiểm tra kỹ đầu vào
     const safeOldLoc = (oldLoc || "").trim();
@@ -3268,47 +3379,55 @@ export default function App() {
     setLoading(true);
     let successCount = 0;
 
-    // Tạo bản sao history để cập nhật UI ngay lập tức
-    let updatedHistory = [...history];
+    // TỐI ƯU: Tạo Set key của các item cần chuyển để tra cứu nhanh O(1)
+    const itemsToMoveSigs = new Set();
+    items.forEach((item) => {
+      itemsToMoveSigs.add(
+        `${normalize(item.sku)}|${normalize(item.style)}|${normalize(
+          item.color
+        )}|${normalize(item.unit)}|${normalize(item.po)}|${normalize(
+          item.shipdate
+        )}|${normalize(item.size)}`
+      );
+    });
 
-    for (const item of items) {
-      // Cập nhật history cục bộ
-      updatedHistory = updatedHistory.map((h) => {
-        // --- LOGIC MATCH LOCATION CŨ (FIX BUG) ---
-        let isMatch = false;
-        if (isUnassignedGroup) {
-          // Nếu là nhóm chưa có vị trí, tìm các dòng history có location rỗng hoặc null/"undefined"/"null"/"Chưa set"
-          const loc = h.locationOrReceiver;
-          isMatch =
-            !loc ||
-            loc === "undefined" ||
-            loc === "null" ||
-            loc === "Chưa set" ||
-            loc === "";
-        } else {
-          // Match chính xác tên vị trí
-          isMatch = h.locationOrReceiver === safeOldLoc;
-        }
+    // TỐI ƯU: Duyệt history đúng 1 lần thay vì Items * History
+    const updatedHistory = history.map((h) => {
+      // --- LOGIC MATCH LOCATION CŨ (FIX BUG) ---
+      let isMatchLoc = false;
+      const hLoc = h.locationOrReceiver;
+      if (isUnassignedGroup) {
+        // Nếu là nhóm chưa có vị trí, tìm các dòng history có location rỗng hoặc null/"undefined"/"null"/"Chưa set"
+        isMatchLoc =
+          !hLoc ||
+          hLoc === "undefined" ||
+          hLoc === "null" ||
+          hLoc === "Chưa set" ||
+          hLoc === "";
+      } else {
+        // Match chính xác tên vị trí
+        isMatchLoc = hLoc === safeOldLoc;
+      }
 
-        if (
-          h.type === "NHẬP" &&
-          // CHECK FULL INFO
-          normalize(h.sku) === normalize(item.sku) &&
-          normalize(h.style) === normalize(item.style) &&
-          normalize(h.color) === normalize(item.color) &&
-          normalize(h.unit) === normalize(item.unit) &&
-          normalize(h.po) === normalize(item.po) &&
-          normalize(h.shipdate) === normalize(item.shipdate) &&
-          normalize(h.size) === normalize(item.size) &&
-          isMatch // Sử dụng biến isMatch đã fix
-        ) {
+      if (h.type === "NHẬP" && isMatchLoc) {
+        // Check signature
+        const hSig = `${normalize(h.sku)}|${normalize(h.style)}|${normalize(
+          h.color
+        )}|${normalize(h.unit)}|${normalize(h.po)}|${normalize(
+          h.shipdate
+        )}|${normalize(h.size)}`;
+        if (itemsToMoveSigs.has(hSig)) {
           return { ...h, locationOrReceiver: safeNewLoc };
         }
-        return h;
-      });
+      }
+      return h;
+    });
 
-      // Gửi request lên Sheet
-      // Nếu là nhóm unassigned, gửi oldLocation="" để khớp với cell rỗng trên Sheet
+    setHistory(updatedHistory);
+    localStorage.setItem("warehouseHistory", JSON.stringify(updatedHistory));
+
+    // Gửi request lên Sheet (Vẫn phải gửi từng cái để Script xử lý, nhưng UI đã update xong)
+    for (const item of items) {
       await postToSheet({
         action: "update_location_history",
         ...item,
@@ -3318,8 +3437,6 @@ export default function App() {
       successCount++;
     }
 
-    setHistory(updatedHistory);
-    localStorage.setItem("warehouseHistory", JSON.stringify(updatedHistory));
     setLoading(false);
     showNotification(
       "success",
@@ -3336,7 +3453,11 @@ export default function App() {
     const safeLoc = (location || "").trim();
 
     for (const item of items) {
-      const itemKey = `${item.sku}-${item.po}-${item.size}`;
+      const itemKey = `${normalize(item.sku)}|${normalize(
+        item.style
+      )}|${normalize(item.color)}|${normalize(item.unit)}|${normalize(
+        item.po
+      )}|${normalize(item.shipdate)}|${normalize(item.size)}`;
       const newQty = parseInt(newQuantities[itemKey]);
       const oldQty = item.stock;
 
