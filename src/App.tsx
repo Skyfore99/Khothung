@@ -52,50 +52,48 @@ import {
 
 import QrScanner from "react-qr-scanner";
 
-// --- MÃ SCRIPT GOOGLE SHEET (CẬP NHẬT V4.0 - BỎ CỘT THỪA & CHECK FULL INFO) ---
+// --- MÃ SCRIPT GOOGLE SHEET (CẬP NHẬT V4.1 - FIX UNDEFINED) ---
 const SCRIPT_CODE = `
 function doGet(e) {
   var doc = SpreadsheetApp.getActiveSpreadsheet();
   var history = [];
 
-  // 1. Đọc Lịch sử (Cấu trúc mới: 14 cột)
+  // Helper safe string
+  var safeStr = function(val) {
+      if (val === undefined || val === null) return "";
+      var s = String(val).trim();
+      if (s === "undefined" || s === "null") return "";
+      return s.startsWith("'") ? s.substring(1) : s; 
+  };
+
   function readFromSheet(sheetName) {
     var sheet = doc.getSheetByName(sheetName);
     if (sheet && sheet.getLastRow() > 1) {
-      // Đọc 14 cột thay vì 17
       var range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 14);
       var data = range.getValues();
       
       for (var i = 0; i < data.length; i++) {
         var r = data[i];
-        var clean = function(val) { 
-          if (val === undefined || val === null) return "";
-          var s = String(val).trim();
-          if (s === "undefined" || s === "null") return "";
-          return s.startsWith("'") ? s.substring(1) : s; 
-        };
-
+        
         var dateVal = r[0];
         if (dateVal instanceof Date) { dateVal = Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "yyyy-MM-dd"); } 
-        else { dateVal = clean(dateVal); }
+        else { dateVal = safeStr(dateVal); }
 
         history.push({
           date: dateVal, 
           type: r[1], 
-          sku: clean(r[2]), 
-          style: clean(r[3]), 
-          color: clean(r[4]), 
-          unit: clean(r[5]), 
-          po: clean(r[6]), 
-          shipdate: clean(r[7]), 
-          // Bỏ PO Qty (cũ r[8])
-          size: clean(r[8]), // Cũ là r[9], giờ r[8]
-          // Bỏ MBox (cũ r[10]), KT Thùng (cũ r[11])
-          cartonNC: r[9],    // Cũ là r[12], giờ r[9]
-          quantity: r[10],   // Cũ là r[13], giờ r[10]
-          locationOrReceiver: clean(r[11]), // Cũ r[14], giờ r[11]
-          note: clean(r[12]), // Cũ r[15], giờ r[12]
-          partner: r[13] ? clean(r[13]) : "" // Cũ r[16], giờ r[13]
+          sku: safeStr(r[2]), 
+          style: safeStr(r[3]), 
+          color: safeStr(r[4]), 
+          unit: safeStr(r[5]), 
+          po: safeStr(r[6]), 
+          shipdate: safeStr(r[7]), 
+          size: safeStr(r[8]), 
+          cartonNC: r[9],    
+          quantity: r[10],   
+          locationOrReceiver: safeStr(r[11]), 
+          note: safeStr(r[12]), 
+          partner: r[13] ? safeStr(r[13]) : "" 
         });
       }
     }
@@ -104,37 +102,26 @@ function doGet(e) {
   readFromSheet('XuatKho');
   history.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
 
-  // 2. Đọc Danh mục (Cấu trúc mới: 9 cột)
   var sheetProducts = doc.getSheetByName('DanhMuc');
   var products = [];
   if (sheetProducts && sheetProducts.getLastRow() > 1) {
-    // Đọc 9 cột thay vì 12
     var pData = sheetProducts.getRange(2, 1, sheetProducts.getLastRow() - 1, 9).getValues();
     for (var i = 0; i < pData.length; i++) {
       var r = pData[i];
-      var clean = function(val) { 
-          if (val === undefined || val === null) return "";
-          var s = String(val).trim();
-          if (s === "undefined" || s === "null") return "";
-          return s.startsWith("'") ? s.substring(1) : s; 
-      };
       products.push({
-        sku: clean(r[0]), 
-        style: clean(r[1]), 
-        color: clean(r[2]), 
-        unit: clean(r[3]), 
-        po: clean(r[4]), 
-        shipdate: clean(r[5]), 
-        // Bỏ PO Qty (cũ r[6])
-        size: clean(r[6]), // Cũ r[7], giờ r[6]
-        // Bỏ MBox (cũ r[8]), KT Thùng (cũ r[9])
-        cartonNC: r[7],    // Cũ r[10], giờ r[7]
-        location: clean(r[8]) // Cũ r[11], giờ r[8]
+        sku: safeStr(r[0]), 
+        style: safeStr(r[1]), 
+        color: safeStr(r[2]), 
+        unit: safeStr(r[3]), 
+        po: safeStr(r[4]), 
+        shipdate: safeStr(r[5]), 
+        size: safeStr(r[6]), 
+        cartonNC: r[7],    
+        location: safeStr(r[8]) 
       });
     }
   }
 
-  // 3. Đọc Cấu hình (Mật khẩu Admin)
   var sheetConfig = doc.getSheetByName('CauHinh');
   var adminPassword = "123456"; 
   if (sheetConfig) {
@@ -142,18 +129,16 @@ function doGet(e) {
       if (val) adminPassword = val.toString();
   }
 
-  // 4. Đọc Danh sách Vị trí & Đối tác (Lưu chung sheet CauHinhViTri)
   var sheetLocations = doc.getSheetByName('CauHinhViTri');
   var locations = [];
   var partners = [];
   if (sheetLocations && sheetLocations.getLastRow() > 0) {
-      // Đọc 2 cột đầu tiên (A: Vị trí, B: Đối tác)
       var lastRow = sheetLocations.getLastRow();
       var range = sheetLocations.getRange(1, 1, lastRow, 2);
       var lData = range.getValues();
       for (var i = 0; i < lData.length; i++) {
-         if (lData[i][0]) locations.push(String(lData[i][0])); // Cột A
-         if (lData[i][1]) partners.push(String(lData[i][1]));  // Cột B
+         if (lData[i][0]) locations.push(String(lData[i][0])); 
+         if (lData[i][1]) partners.push(String(lData[i][1]));  
       }
   }
 
@@ -187,7 +172,6 @@ function doPost(e) {
       var sheet = doc.getSheetByName(sheetName);
       if (!sheet) {
         sheet = doc.insertSheet(sheetName);
-        // Header mới: 14 cột
         sheet.appendRow(['Ngày', 'Loại', 'Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'Size', 'NC Thùng', 'SL', 'Vị trí/Nhóm', 'Ghi chú', 'Đối tác']);
       }
       
@@ -213,28 +197,25 @@ function doPost(e) {
       ]);
       
       if (data.type === 'NHẬP' && locVal) {
-        // Cập nhật vị trí vào DanhMuc (check full info)
         updateLocationInSheet(doc, data, locVal);
       }
     }
+    // ... logic add_product, update_location ...
     else if (action === 'add_product' || action === 'bulk_add_products') {
       var sheet = doc.getSheetByName('DanhMuc');
       if (!sheet) {
         sheet = doc.insertSheet('DanhMuc');
-        // Header mới: 9 cột
         sheet.appendRow(['Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'Size', 'NC Thùng', 'Vị trí']);
       }
       var items = action === 'add_product' ? [data] : data.items;
       var newRows = [];
       var currentData = [];
       if (sheet.getLastRow() > 1) { 
-          // Đọc 9 cột
           currentData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues(); 
       }
       for (var i = 0; i < items.length; i++) {
         var item = items[i];
         var isDuplicate = false;
-        // Check FULL INFO
         for (var j = 0; j < currentData.length; j++) {
            var row = currentData[j];
            if (String(row[0]).replace(/'/g,"") == item.sku && 
@@ -259,38 +240,20 @@ function doPost(e) {
              "'"+item.cartonNC, 
              "'"+item.location 
            ]);
-           // Push vào mảng tạm để check tiếp các item sau trong cùng batch
            currentData.push(["'"+item.sku, "'"+item.style, "'"+item.color, "'"+item.unit, "'"+item.po, "'"+item.shipdate, "'"+item.size]); 
         }
       }
       if (newRows.length > 0) { sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 9).setValues(newRows); }
       return ContentService.createTextOutput(JSON.stringify({"result":"success", "added": newRows.length})).setMimeType(ContentService.MimeType.JSON);
     }
-    else if (action === 'delete_product') {
-      var sheet = doc.getSheetByName('DanhMuc');
-      if (sheet) {
-        var values = sheet.getDataRange().getValues();
-        for (var i = 1; i < values.length; i++) {
-           // Check FULL INFO để xóa đúng dòng
-           if (String(values[i][0]).replace(/'/g,"") == data.sku && 
-               String(values[i][1]).replace(/'/g,"") == data.style && 
-               String(values[i][2]).replace(/'/g,"") == data.color &&
-               String(values[i][3]).replace(/'/g,"") == data.unit &&
-               String(values[i][4]).replace(/'/g,"") == data.po && 
-               String(values[i][5]).replace(/'/g,"") == data.shipdate &&
-               String(values[i][6]).replace(/'/g,"") == data.size) {
-               sheet.deleteRow(i + 1); break;
-           }
-        }
-      }
-    }
     else if (action === 'update_location_history') {
-      // Cập nhật trong lịch sử Nhập
       var sheet = doc.getSheetByName('NhapKho');
       if (sheet) {
         var values = sheet.getDataRange().getValues();
+        var newLocSafe = safeStr(data.newLocation);
+        var oldLocSafe = safeStr(data.oldLocation);
+        
         for (var i = 1; i < values.length; i++) {
-           // Cấu trúc history: 0-Date, 1-Type, 2-SKU, 3-Style, 4-Color, 5-Unit, 6-PO, 7-Ship, 8-Size, 9-NC, 10-Qty, 11-Loc
            if (String(values[i][2]).replace(/'/g,"") == data.sku && 
                String(values[i][3]).replace(/'/g,"") == data.style &&
                String(values[i][4]).replace(/'/g,"") == data.color &&
@@ -298,28 +261,38 @@ function doPost(e) {
                String(values[i][6]).replace(/'/g,"") == data.po && 
                String(values[i][7]).replace(/'/g,"") == data.shipdate &&
                String(values[i][8]).replace(/'/g,"") == data.size &&
-               String(values[i][11]).replace(/'/g,"") == data.oldLocation) {
-               sheet.getRange(i + 1, 12).setValue("'"+data.newLocation); // Cột 12 là Location (index 11 + 1)
+               String(values[i][11]).replace(/'/g,"") == oldLocSafe) {
+               sheet.getRange(i + 1, 12).setValue("'"+newLocSafe);
            }
         }
       }
       updateLocationInSheet(doc, data, data.newLocation);
     }
-    // ... (Giữ nguyên phần update_password, update_locations, update_partners) ...
+    else if (action === 'delete_product') {
+        var sheet = doc.getSheetByName('DanhMuc');
+        if (sheet) {
+            var values = sheet.getDataRange().getValues();
+            for (var i = 1; i < values.length; i++) {
+            if (String(values[i][0]).replace(/'/g,"") == data.sku && 
+                String(values[i][1]).replace(/'/g,"") == data.style && 
+                String(values[i][2]).replace(/'/g,"") == data.color &&
+                String(values[i][3]).replace(/'/g,"") == data.unit &&
+                String(values[i][4]).replace(/'/g,"") == data.po && 
+                String(values[i][5]).replace(/'/g,"") == data.shipdate &&
+                String(values[i][6]).replace(/'/g,"") == data.size) {
+                sheet.deleteRow(i + 1); break;
+            }
+            }
+        }
+    }
     else if (action === 'update_password') {
       var sheet = doc.getSheetByName('CauHinh');
-      if (!sheet) { 
-        sheet = doc.insertSheet('CauHinh'); 
-        sheet.hideSheet();
-      }
+      if (!sheet) { sheet = doc.insertSheet('CauHinh'); sheet.hideSheet(); }
       sheet.getRange(1, 1).setValue(data.password);
     }
     else if (action === 'update_locations') {
       var sheet = doc.getSheetByName('CauHinhViTri');
-      if (!sheet) { 
-         sheet = doc.insertSheet('CauHinhViTri');
-         sheet.hideSheet();
-      }
+      if (!sheet) { sheet = doc.insertSheet('CauHinhViTri'); sheet.hideSheet(); }
       var maxRows = sheet.getMaxRows();
       sheet.getRange(1, 1, maxRows, 1).clearContent(); 
       var locs = data.locations;
@@ -330,10 +303,7 @@ function doPost(e) {
     }
     else if (action === 'update_partners') {
       var sheet = doc.getSheetByName('CauHinhViTri');
-      if (!sheet) { 
-         sheet = doc.insertSheet('CauHinhViTri');
-         sheet.hideSheet();
-      }
+      if (!sheet) { sheet = doc.insertSheet('CauHinhViTri'); sheet.hideSheet(); }
       var maxRows = sheet.getMaxRows();
       sheet.getRange(1, 2, maxRows, 1).clearContent();
       var parts = data.partners;
@@ -357,7 +327,6 @@ function updateLocationInSheet(doc, item, newLoc) {
   if (sheet) {
     var values = sheet.getDataRange().getValues();
     for (var i = 1; i < values.length; i++) {
-        // Check FULL INFO để update đúng dòng
         if (String(values[i][0]).replace(/'/g,"") == item.sku && 
             String(values[i][1]).replace(/'/g,"") == item.style && 
             String(values[i][2]).replace(/'/g,"") == item.color &&
@@ -365,7 +334,7 @@ function updateLocationInSheet(doc, item, newLoc) {
             String(values[i][4]).replace(/'/g,"") == item.po && 
             String(values[i][5]).replace(/'/g,"") == item.shipdate &&
             String(values[i][6]).replace(/'/g,"") == item.size) {
-            sheet.getRange(i + 1, 9).setValue("'"+newLoc); // Cột 9 là Location
+            sheet.getRange(i + 1, 9).setValue("'"+newLoc);
             break;
         }
     }
@@ -474,6 +443,9 @@ const ConfigurableSelect = ({
   const [inputValue, setInputValue] = useState("");
   const dropdownRef = useRef(null);
 
+  // FIX: Đảm bảo giá trị hiển thị không bao giờ là undefined
+  const displayValue = value || "";
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -504,7 +476,7 @@ const ConfigurableSelect = ({
   };
 
   const filteredOptions = options.filter((opt) =>
-    opt.toLowerCase().includes(value.toLowerCase())
+    opt.toLowerCase().includes(displayValue.toLowerCase())
   );
 
   return (
@@ -519,7 +491,7 @@ const ConfigurableSelect = ({
           type="text"
           required={required}
           className="w-full p-2 pr-8 rounded text-gray-900 text-base border border-gray-300 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-bold"
-          value={value}
+          value={displayValue}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setIsOpen(true)}
           placeholder={placeholder}
@@ -553,7 +525,7 @@ const ConfigurableSelect = ({
             </div>
           )}
           <ul className="py-1">
-            {filteredOptions.length === 0 && !value && (
+            {filteredOptions.length === 0 && !displayValue && (
               <li className="px-3 py-2 text-sm text-gray-400 text-center italic">
                 {allowAdd
                   ? "Danh sách trống"
@@ -564,7 +536,9 @@ const ConfigurableSelect = ({
               <li
                 key={idx}
                 className={`px-3 py-2 text-base text-gray-800 hover:bg-indigo-50 cursor-pointer flex justify-between items-center group ${
-                  value === opt ? "bg-indigo-50 text-indigo-700 font-bold" : ""
+                  displayValue === opt
+                    ? "bg-indigo-50 text-indigo-700 font-bold"
+                    : ""
                 }`}
                 onClick={() => {
                   onChange(opt);
@@ -717,7 +691,6 @@ const NavTabs = ({ activeTab, setActiveTab }) => {
       icon: <LayoutGrid size={20} />,
       color: "purple",
     },
-    // ĐÃ BỎ TAB INVENTORY (LIST TỒN) THEO YÊU CẦU
     {
       id: "catalog",
       label: "Dữ Liệu Hàng",
@@ -1731,7 +1704,10 @@ const CatalogView = ({
                   className="w-full p-2 text-base border rounded uppercase font-mono"
                   value={form.sku}
                   onChange={(e) =>
-                    setForm({ ...form, sku: e.target.value.toUpperCase() })
+                    setForm((prev) => ({
+                      ...prev,
+                      sku: e.target.value.toUpperCase(),
+                    }))
                   }
                 />
               </div>
@@ -1743,7 +1719,9 @@ const CatalogView = ({
                   required
                   className="w-full p-2 text-base border rounded"
                   value={form.style}
-                  onChange={(e) => setForm({ ...form, style: e.target.value })}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, style: e.target.value }))
+                  }
                 />
               </div>
             </div>
@@ -1753,7 +1731,9 @@ const CatalogView = ({
                 <input
                   className="w-full p-2 text-base border rounded"
                   value={form.color}
-                  onChange={(e) => setForm({ ...form, color: e.target.value })}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, color: e.target.value }))
+                  }
                 />
               </div>
               <div>
@@ -1761,7 +1741,9 @@ const CatalogView = ({
                 <input
                   className="w-full p-2 text-base border rounded"
                   value={form.unit}
-                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, unit: e.target.value }))
+                  }
                 />
               </div>
             </div>
@@ -1771,7 +1753,9 @@ const CatalogView = ({
                 <input
                   className="w-full p-2 text-base border rounded"
                   value={form.po}
-                  onChange={(e) => setForm({ ...form, po: e.target.value })}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, po: e.target.value }))
+                  }
                 />
               </div>
               <div>
@@ -1782,7 +1766,7 @@ const CatalogView = ({
                   className="w-full p-2 text-base border rounded"
                   value={form.shipdate}
                   onChange={(e) =>
-                    setForm({ ...form, shipdate: e.target.value })
+                    setForm((prev) => ({ ...prev, shipdate: e.target.value }))
                   }
                 />
               </div>
@@ -1795,7 +1779,9 @@ const CatalogView = ({
                 <input
                   className="w-full p-2 text-base border rounded"
                   value={form.size}
-                  onChange={(e) => setForm({ ...form, size: e.target.value })}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, size: e.target.value }))
+                  }
                 />
               </div>
               <div>
@@ -1806,7 +1792,7 @@ const CatalogView = ({
                   className="w-full p-2 text-base border rounded"
                   value={form.cartonNC}
                   onChange={(e) =>
-                    setForm({ ...form, cartonNC: e.target.value })
+                    setForm((prev) => ({ ...prev, cartonNC: e.target.value }))
                   }
                 />
               </div>
@@ -1869,7 +1855,8 @@ const TransactionView = ({
       setSelected(prefillData.item);
       setForm((prev) => ({
         ...prev,
-        locationOrReceiver: prefillData.location,
+        // FIX: Đảm bảo không bao giờ là undefined
+        locationOrReceiver: prefillData.location || "",
         quantity: 1,
       }));
       onClearPrefill();
@@ -2156,7 +2143,9 @@ const TransactionView = ({
                   required
                   type="date"
                   value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, date: e.target.value }))
+                  }
                   className="w-full p-2 rounded text-gray-800 text-base outline-none"
                 />
               </div>
@@ -2172,7 +2161,7 @@ const TransactionView = ({
                   min="1"
                   value={form.quantity}
                   onChange={(e) =>
-                    setForm({ ...form, quantity: e.target.value })
+                    setForm((prev) => ({ ...prev, quantity: e.target.value }))
                   }
                   className="w-full p-2 rounded text-gray-800 font-bold text-center outline-none focus:ring-4 focus:ring-white/50 text-base"
                   placeholder="0"
@@ -2183,7 +2172,9 @@ const TransactionView = ({
             <ConfigurableSelect
               label={activeTab === "input" ? "Vị trí  " : "Xuất từ Vị trí "}
               value={form.locationOrReceiver}
-              onChange={(val) => setForm({ ...form, locationOrReceiver: val })}
+              onChange={(val) =>
+                setForm((prev) => ({ ...prev, locationOrReceiver: val }))
+              }
               options={locations}
               onOptionsChange={onLocationsChange}
               placeholder={
@@ -2198,7 +2189,9 @@ const TransactionView = ({
               <ConfigurableSelect
                 label="Nhóm"
                 value={form.partner}
-                onChange={(val) => setForm({ ...form, partner: val })}
+                onChange={(val) =>
+                  setForm((prev) => ({ ...prev, partner: val }))
+                }
                 options={partners}
                 onOptionsChange={onPartnersChange}
                 placeholder="Chọn đối tác..."
@@ -2211,7 +2204,9 @@ const TransactionView = ({
               <input
                 type="text"
                 value={form.note}
-                onChange={(e) => setForm({ ...form, note: e.target.value })}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, note: e.target.value }))
+                }
                 className="w-full p-2 rounded text-gray-800 text-base outline-none"
                 placeholder="..."
               />
@@ -2654,7 +2649,7 @@ const SettingsHelpView = ({
       ) : (
         <>
           <h2 className="text-xl font-bold mb-4 text-blue-600">
-            CẬP NHẬT MÃ SCRIPT MỚI (V4.0 - FINAL)
+            CẬP NHẬT MÃ SCRIPT MỚI (V4.1 - FIX UNDEFINED)
           </h2>
           <p className="mb-2 text-sm text-red-500 font-bold">
             QUAN TRỌNG: Bạn CẦN cập nhật mã này để loại bỏ các cột thừa và áp
@@ -3141,6 +3136,10 @@ export default function App() {
   const handleTransaction = async (selectedProduct, formData) => {
     setLoading(true);
 
+    // FIX V4.1: Đảm bảo dữ liệu không bị undefined khi gửi lên
+    const safeLoc = (formData.locationOrReceiver || "").trim();
+    const safePartner = (formData.partner || "").trim();
+
     // UPDATE V2.8: Không gộp partner vào note nữa, gửi tách riêng
     const dataToSend = {
       action: "transaction",
@@ -3153,16 +3152,13 @@ export default function App() {
       po: selectedProduct.po,
       shipdate: selectedProduct.shipdate,
       // BỎ CÁC TRƯỜNG THỪA KHI GỬI
-      // poQty: selectedProduct.poQty,
       size: selectedProduct.size,
-      // masterBoxQty: selectedProduct.masterBoxQty,
-      // cartonSize: selectedProduct.cartonSize,
       cartonNC: selectedProduct.cartonNC,
       quantity: formData.quantity,
       // Fix V3.0: Luôn đảm bảo locationOrReceiver không phải undefined
-      locationOrReceiver: formData.locationOrReceiver || "",
+      locationOrReceiver: safeLoc,
       note: formData.note || "",
-      partner: formData.partner || "",
+      partner: safePartner,
     };
     const success = await postToSheet(dataToSend);
     setLoading(false);
@@ -3170,9 +3166,32 @@ export default function App() {
       const newHistory = [dataToSend, ...history];
       setHistory(newHistory);
       localStorage.setItem("warehouseHistory", JSON.stringify(newHistory));
-      if (activeTab === "input" && formData.locationOrReceiver) {
-        handleUpdateLocation(selectedProduct, formData.locationOrReceiver);
+
+      // FIX V5.0: Khi nhập kho, chỉ cập nhật vị trí mặc định trong Danh mục (Local Product),
+      // KHÔNG ĐƯỢC gọi handleUpdateLocation vì hàm đó dùng để "Chuyển kho" (sửa lịch sử cũ).
+      if (activeTab === "input" && safeLoc) {
+        const updatedProducts = products.map((p) => {
+          // So sánh full info để tìm đúng sản phẩm cần update vị trí default
+          if (
+            normalize(p.sku) === normalize(selectedProduct.sku) &&
+            normalize(p.style) === normalize(selectedProduct.style) &&
+            normalize(p.color) === normalize(selectedProduct.color) &&
+            normalize(p.unit) === normalize(selectedProduct.unit) &&
+            normalize(p.size) === normalize(selectedProduct.size) &&
+            normalize(p.po) === normalize(selectedProduct.po) &&
+            normalize(p.shipdate) === normalize(selectedProduct.shipdate)
+          ) {
+            return { ...p, location: safeLoc };
+          }
+          return p;
+        });
+        setProducts(updatedProducts);
+        localStorage.setItem(
+          "warehouseProducts",
+          JSON.stringify(updatedProducts)
+        );
       }
+
       showNotification("success", "Thành công!");
     }
   };
@@ -3182,6 +3201,10 @@ export default function App() {
     setLoading(true);
     const newTransactions = [];
     let successCount = 0;
+
+    // FIX V4.1: Đảm bảo an toàn dữ liệu
+    const safeLoc = (location || "").trim();
+    const safePartner = (partner || "").trim();
 
     for (const item of items) {
       // UPDATE V2.8: Không tự động điền "Xuất nhanh..." vào note, để trống note.
@@ -3196,15 +3219,12 @@ export default function App() {
         po: item.po,
         shipdate: item.shipdate,
         // BỎ TRƯỜNG THỪA
-        // poQty: item.poQty,
         size: item.size,
-        // masterBoxQty: item.masterBoxQty,
-        // cartonSize: item.cartonSize,
         cartonNC: item.cartonNC,
         quantity: item.exportQty,
-        locationOrReceiver: location || "", // Xuất từ vị trí này (Fix undefined)
+        locationOrReceiver: safeLoc, // Xuất từ vị trí này
         note: "", // YÊU CẦU: Để trống ghi chú
-        partner: partner || "", // YÊU CẦU: Tách riêng cột nhóm (đối tác)
+        partner: safePartner, // YÊU CẦU: Tách riêng cột nhóm (đối tác)
       };
 
       // Gửi từng request để đảm bảo an toàn dữ liệu
@@ -3229,6 +3249,22 @@ export default function App() {
 
   // --- CẢI TIẾN: CHUYỂN KHO HÀNG LOẠT ---
   const handleBatchMoveLocation = async (items, oldLoc, newLoc) => {
+    // FIX V4.1: Kiểm tra kỹ đầu vào
+    const safeOldLoc = (oldLoc || "").trim();
+    const safeNewLoc = (newLoc || "").trim();
+
+    // Logic fix: Cho phép chuyển từ "Hàng chưa có vị trí" (unassigned)
+    const isUnassignedGroup = safeOldLoc === "Hàng chưa có vị trí";
+
+    if (!isUnassignedGroup && !safeOldLoc) {
+      showNotification("error", "Vị trí cũ không hợp lệ.");
+      return;
+    }
+    if (!safeNewLoc) {
+      showNotification("error", "Vị trí mới không được để trống.");
+      return;
+    }
+
     setLoading(true);
     let successCount = 0;
 
@@ -3238,6 +3274,22 @@ export default function App() {
     for (const item of items) {
       // Cập nhật history cục bộ
       updatedHistory = updatedHistory.map((h) => {
+        // --- LOGIC MATCH LOCATION CŨ (FIX BUG) ---
+        let isMatch = false;
+        if (isUnassignedGroup) {
+          // Nếu là nhóm chưa có vị trí, tìm các dòng history có location rỗng hoặc null/"undefined"/"null"/"Chưa set"
+          const loc = h.locationOrReceiver;
+          isMatch =
+            !loc ||
+            loc === "undefined" ||
+            loc === "null" ||
+            loc === "Chưa set" ||
+            loc === "";
+        } else {
+          // Match chính xác tên vị trí
+          isMatch = h.locationOrReceiver === safeOldLoc;
+        }
+
         if (
           h.type === "NHẬP" &&
           // CHECK FULL INFO
@@ -3248,19 +3300,20 @@ export default function App() {
           normalize(h.po) === normalize(item.po) &&
           normalize(h.shipdate) === normalize(item.shipdate) &&
           normalize(h.size) === normalize(item.size) &&
-          h.locationOrReceiver === oldLoc
+          isMatch // Sử dụng biến isMatch đã fix
         ) {
-          return { ...h, locationOrReceiver: newLoc };
+          return { ...h, locationOrReceiver: safeNewLoc };
         }
         return h;
       });
 
       // Gửi request lên Sheet
+      // Nếu là nhóm unassigned, gửi oldLocation="" để khớp với cell rỗng trên Sheet
       await postToSheet({
         action: "update_location_history",
         ...item,
-        oldLocation: oldLoc,
-        newLocation: newLoc,
+        oldLocation: isUnassignedGroup ? "" : safeOldLoc,
+        newLocation: safeNewLoc,
       });
       successCount++;
     }
@@ -3268,7 +3321,10 @@ export default function App() {
     setHistory(updatedHistory);
     localStorage.setItem("warehouseHistory", JSON.stringify(updatedHistory));
     setLoading(false);
-    showNotification("success", `Đã chuyển ${successCount} mục sang ${newLoc}`);
+    showNotification(
+      "success",
+      `Đã chuyển ${successCount} mục sang ${safeNewLoc}`
+    );
   };
 
   // --- NEW FEATURE: Sửa tồn kho hàng loạt (Batch Stock Edit) ---
@@ -3277,6 +3333,7 @@ export default function App() {
     let successCount = 0;
 
     const newTransactions = [];
+    const safeLoc = (location || "").trim();
 
     for (const item of items) {
       const itemKey = `${item.sku}-${item.po}-${item.size}`;
@@ -3302,13 +3359,10 @@ export default function App() {
         po: item.po,
         shipdate: item.shipdate,
         // BỎ TRƯỜNG THỪA
-        // poQty: item.poQty,
         size: item.size,
-        // masterBoxQty: item.masterBoxQty,
-        // cartonSize: item.cartonSize,
         cartonNC: item.cartonNC,
         quantity: quantity,
-        locationOrReceiver: location,
+        locationOrReceiver: safeLoc,
         note: `Điều chỉnh tồn kho: ${oldQty} -> ${newQty}`,
         partner: "Kiểm kê",
       };
