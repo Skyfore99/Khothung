@@ -52,17 +52,18 @@ import {
 
 import QrScanner from "react-qr-scanner";
 
-// --- MÃ SCRIPT GOOGLE SHEET (CẬP NHẬT V3.9 - LƯU CHUNG CẤU HÌNH) ---
+// --- MÃ SCRIPT GOOGLE SHEET (CẬP NHẬT V4.0 - BỎ CỘT THỪA & CHECK FULL INFO) ---
 const SCRIPT_CODE = `
 function doGet(e) {
   var doc = SpreadsheetApp.getActiveSpreadsheet();
   var history = [];
 
-  // 1. Đọc Lịch sử
+  // 1. Đọc Lịch sử (Cấu trúc mới: 14 cột)
   function readFromSheet(sheetName) {
     var sheet = doc.getSheetByName(sheetName);
     if (sheet && sheet.getLastRow() > 1) {
-      var range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 17);
+      // Đọc 14 cột thay vì 17
+      var range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 14);
       var data = range.getValues();
       
       for (var i = 0; i < data.length; i++) {
@@ -79,12 +80,22 @@ function doGet(e) {
         else { dateVal = clean(dateVal); }
 
         history.push({
-          date: dateVal, type: r[1], sku: clean(r[2]), style: clean(r[3]), color: clean(r[4]), 
-          unit: clean(r[5]), po: clean(r[6]), shipdate: clean(r[7]), poQty: r[8], size: clean(r[9]), 
-          masterBoxQty: r[10], cartonSize: r[11], cartonNC: r[12], quantity: r[13], 
-          locationOrReceiver: clean(r[14]), 
-          note: clean(r[15]),
-          partner: r[16] ? clean(r[16]) : "" 
+          date: dateVal, 
+          type: r[1], 
+          sku: clean(r[2]), 
+          style: clean(r[3]), 
+          color: clean(r[4]), 
+          unit: clean(r[5]), 
+          po: clean(r[6]), 
+          shipdate: clean(r[7]), 
+          // Bỏ PO Qty (cũ r[8])
+          size: clean(r[8]), // Cũ là r[9], giờ r[8]
+          // Bỏ MBox (cũ r[10]), KT Thùng (cũ r[11])
+          cartonNC: r[9],    // Cũ là r[12], giờ r[9]
+          quantity: r[10],   // Cũ là r[13], giờ r[10]
+          locationOrReceiver: clean(r[11]), // Cũ r[14], giờ r[11]
+          note: clean(r[12]), // Cũ r[15], giờ r[12]
+          partner: r[13] ? clean(r[13]) : "" // Cũ r[16], giờ r[13]
         });
       }
     }
@@ -93,11 +104,12 @@ function doGet(e) {
   readFromSheet('XuatKho');
   history.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
 
-  // 2. Đọc Danh mục
+  // 2. Đọc Danh mục (Cấu trúc mới: 9 cột)
   var sheetProducts = doc.getSheetByName('DanhMuc');
   var products = [];
   if (sheetProducts && sheetProducts.getLastRow() > 1) {
-    var pData = sheetProducts.getRange(2, 1, sheetProducts.getLastRow() - 1, 12).getValues();
+    // Đọc 9 cột thay vì 12
+    var pData = sheetProducts.getRange(2, 1, sheetProducts.getLastRow() - 1, 9).getValues();
     for (var i = 0; i < pData.length; i++) {
       var r = pData[i];
       var clean = function(val) { 
@@ -107,9 +119,17 @@ function doGet(e) {
           return s.startsWith("'") ? s.substring(1) : s; 
       };
       products.push({
-        sku: clean(r[0]), style: clean(r[1]), color: clean(r[2]), unit: clean(r[3]), 
-        po: clean(r[4]), shipdate: clean(r[5]), poQty: r[6], size: clean(r[7]), 
-        masterBoxQty: r[8], cartonSize: r[9], cartonNC: r[10], location: clean(r[11])
+        sku: clean(r[0]), 
+        style: clean(r[1]), 
+        color: clean(r[2]), 
+        unit: clean(r[3]), 
+        po: clean(r[4]), 
+        shipdate: clean(r[5]), 
+        // Bỏ PO Qty (cũ r[6])
+        size: clean(r[6]), // Cũ r[7], giờ r[6]
+        // Bỏ MBox (cũ r[8]), KT Thùng (cũ r[9])
+        cartonNC: r[7],    // Cũ r[10], giờ r[7]
+        location: clean(r[8]) // Cũ r[11], giờ r[8]
       });
     }
   }
@@ -167,7 +187,8 @@ function doPost(e) {
       var sheet = doc.getSheetByName(sheetName);
       if (!sheet) {
         sheet = doc.insertSheet(sheetName);
-        sheet.appendRow(['Ngày', 'Loại', 'Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'PO Qty', 'Size', 'M.Box', 'KT Thùng', 'NC Thùng', 'SL', 'Vị trí/Nhóm', 'Ghi chú', 'Đối tác']);
+        // Header mới: 14 cột
+        sheet.appendRow(['Ngày', 'Loại', 'Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'Size', 'NC Thùng', 'SL', 'Vị trí/Nhóm', 'Ghi chú', 'Đối tác']);
       }
       
       var locVal = safeStr(data.locationOrReceiver);
@@ -175,43 +196,74 @@ function doPost(e) {
       var partnerVal = safeStr(data.partner);
 
       sheet.appendRow([
-        data.date, data.type, "'"+data.sku, "'"+data.style, "'"+data.color, "'"+data.unit, 
-        "'"+data.po, "'"+data.shipdate, "'"+data.poQty, "'"+data.size, "'"+data.masterBoxQty, 
-        "'"+data.cartonSize, "'"+data.cartonNC, data.quantity, 
+        data.date, 
+        data.type, 
+        "'"+data.sku, 
+        "'"+data.style, 
+        "'"+data.color, 
+        "'"+data.unit, 
+        "'"+data.po, 
+        "'"+data.shipdate, 
+        "'"+data.size, 
+        "'"+data.cartonNC, 
+        data.quantity, 
         "'"+locVal, 
         "'"+noteVal,
         "'"+partnerVal
       ]);
       
       if (data.type === 'NHẬP' && locVal) {
-        updateLocationInSheet(doc, data.sku, locVal);
+        // Cập nhật vị trí vào DanhMuc (check full info)
+        updateLocationInSheet(doc, data, locVal);
       }
     }
     else if (action === 'add_product' || action === 'bulk_add_products') {
       var sheet = doc.getSheetByName('DanhMuc');
       if (!sheet) {
         sheet = doc.insertSheet('DanhMuc');
-        sheet.appendRow(['Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'PO Qty', 'Size', 'M.Box', 'KT Thùng', 'NC Thùng', 'Vị trí']);
+        // Header mới: 9 cột
+        sheet.appendRow(['Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'Size', 'NC Thùng', 'Vị trí']);
       }
       var items = action === 'add_product' ? [data] : data.items;
       var newRows = [];
       var currentData = [];
-      if (sheet.getLastRow() > 1) { currentData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 12).getValues(); }
+      if (sheet.getLastRow() > 1) { 
+          // Đọc 9 cột
+          currentData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues(); 
+      }
       for (var i = 0; i < items.length; i++) {
         var item = items[i];
         var isDuplicate = false;
+        // Check FULL INFO
         for (var j = 0; j < currentData.length; j++) {
            var row = currentData[j];
-           if (String(row[0]).replace(/'/g,"") == item.sku && String(row[1]).replace(/'/g,"") == item.style && String(row[4]).replace(/'/g,"") == item.po && String(row[7]).replace(/'/g,"") == item.size) {
+           if (String(row[0]).replace(/'/g,"") == item.sku && 
+               String(row[1]).replace(/'/g,"") == item.style && 
+               String(row[2]).replace(/'/g,"") == item.color && 
+               String(row[3]).replace(/'/g,"") == item.unit && 
+               String(row[4]).replace(/'/g,"") == item.po && 
+               String(row[5]).replace(/'/g,"") == item.shipdate && 
+               String(row[6]).replace(/'/g,"") == item.size) {
                isDuplicate = true; break;
            }
         }
         if (!isDuplicate) {
-           newRows.push([ "'"+item.sku, "'"+item.style, "'"+item.color, "'"+item.unit, "'"+item.po, "'"+item.shipdate, "'"+item.poQty, "'"+item.size, "'"+item.masterBoxQty, "'"+item.cartonSize, "'"+item.cartonNC, "'"+item.location ]);
-           currentData.push(["'"+item.sku, "'"+item.style, "", "", "'"+item.po, "", "", "'"+item.size]); 
+           newRows.push([ 
+             "'"+item.sku, 
+             "'"+item.style, 
+             "'"+item.color, 
+             "'"+item.unit, 
+             "'"+item.po, 
+             "'"+item.shipdate, 
+             "'"+item.size, 
+             "'"+item.cartonNC, 
+             "'"+item.location 
+           ]);
+           // Push vào mảng tạm để check tiếp các item sau trong cùng batch
+           currentData.push(["'"+item.sku, "'"+item.style, "'"+item.color, "'"+item.unit, "'"+item.po, "'"+item.shipdate, "'"+item.size]); 
         }
       }
-      if (newRows.length > 0) { sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 12).setValues(newRows); }
+      if (newRows.length > 0) { sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 9).setValues(newRows); }
       return ContentService.createTextOutput(JSON.stringify({"result":"success", "added": newRows.length})).setMimeType(ContentService.MimeType.JSON);
     }
     else if (action === 'delete_product') {
@@ -219,27 +271,41 @@ function doPost(e) {
       if (sheet) {
         var values = sheet.getDataRange().getValues();
         for (var i = 1; i < values.length; i++) {
-           if (String(values[i][0]).replace(/'/g,"") == data.sku && String(values[i][4]).replace(/'/g,"") == data.po && String(values[i][7]).replace(/'/g,"") == data.size) {
+           // Check FULL INFO để xóa đúng dòng
+           if (String(values[i][0]).replace(/'/g,"") == data.sku && 
+               String(values[i][1]).replace(/'/g,"") == data.style && 
+               String(values[i][2]).replace(/'/g,"") == data.color &&
+               String(values[i][3]).replace(/'/g,"") == data.unit &&
+               String(values[i][4]).replace(/'/g,"") == data.po && 
+               String(values[i][5]).replace(/'/g,"") == data.shipdate &&
+               String(values[i][6]).replace(/'/g,"") == data.size) {
                sheet.deleteRow(i + 1); break;
            }
         }
       }
     }
     else if (action === 'update_location_history') {
+      // Cập nhật trong lịch sử Nhập
       var sheet = doc.getSheetByName('NhapKho');
       if (sheet) {
         var values = sheet.getDataRange().getValues();
         for (var i = 1; i < values.length; i++) {
+           // Cấu trúc history: 0-Date, 1-Type, 2-SKU, 3-Style, 4-Color, 5-Unit, 6-PO, 7-Ship, 8-Size, 9-NC, 10-Qty, 11-Loc
            if (String(values[i][2]).replace(/'/g,"") == data.sku && 
+               String(values[i][3]).replace(/'/g,"") == data.style &&
+               String(values[i][4]).replace(/'/g,"") == data.color &&
+               String(values[i][5]).replace(/'/g,"") == data.unit &&
                String(values[i][6]).replace(/'/g,"") == data.po && 
-               String(values[i][9]).replace(/'/g,"") == data.size &&
-               String(values[i][14]).replace(/'/g,"") == data.oldLocation) {
-               sheet.getRange(i + 1, 15).setValue("'"+data.newLocation);
+               String(values[i][7]).replace(/'/g,"") == data.shipdate &&
+               String(values[i][8]).replace(/'/g,"") == data.size &&
+               String(values[i][11]).replace(/'/g,"") == data.oldLocation) {
+               sheet.getRange(i + 1, 12).setValue("'"+data.newLocation); // Cột 12 là Location (index 11 + 1)
            }
         }
       }
-      updateLocationInSheet(doc, data.sku, data.newLocation);
+      updateLocationInSheet(doc, data, data.newLocation);
     }
+    // ... (Giữ nguyên phần update_password, update_locations, update_partners) ...
     else if (action === 'update_password') {
       var sheet = doc.getSheetByName('CauHinh');
       if (!sheet) { 
@@ -249,16 +315,13 @@ function doPost(e) {
       sheet.getRange(1, 1).setValue(data.password);
     }
     else if (action === 'update_locations') {
-      // Cập nhật Vị trí (Cột A)
       var sheet = doc.getSheetByName('CauHinhViTri');
       if (!sheet) { 
          sheet = doc.insertSheet('CauHinhViTri');
          sheet.hideSheet();
       }
-      // Xóa nội dung cột A (1)
       var maxRows = sheet.getMaxRows();
       sheet.getRange(1, 1, maxRows, 1).clearContent(); 
-      
       var locs = data.locations;
       if (locs && locs.length > 0) {
          var rows = locs.map(function(l) { return [l]; });
@@ -266,16 +329,13 @@ function doPost(e) {
       }
     }
     else if (action === 'update_partners') {
-      // Cập nhật Đối tác (Cột B)
-      var sheet = doc.getSheetByName('CauHinhViTri'); // Dùng chung sheet
+      var sheet = doc.getSheetByName('CauHinhViTri');
       if (!sheet) { 
          sheet = doc.insertSheet('CauHinhViTri');
          sheet.hideSheet();
       }
-      // Xóa nội dung cột B (2)
       var maxRows = sheet.getMaxRows();
       sheet.getRange(1, 2, maxRows, 1).clearContent();
-      
       var parts = data.partners;
       if (parts && parts.length > 0) {
          var rows = parts.map(function(p) { return [p]; });
@@ -291,12 +351,24 @@ function doPost(e) {
   }
 }
 
-function updateLocationInSheet(doc, sku, newLoc) {
+function updateLocationInSheet(doc, item, newLoc) {
   if (!newLoc || newLoc === "undefined" || newLoc === "null") return;
   var sheet = doc.getSheetByName('DanhMuc');
   if (sheet) {
-    var found = sheet.createTextFinder(sku).matchEntireCell(true).findNext();
-    if (found) { sheet.getRange(found.getRow(), 12).setValue("'"+newLoc); }
+    var values = sheet.getDataRange().getValues();
+    for (var i = 1; i < values.length; i++) {
+        // Check FULL INFO để update đúng dòng
+        if (String(values[i][0]).replace(/'/g,"") == item.sku && 
+            String(values[i][1]).replace(/'/g,"") == item.style && 
+            String(values[i][2]).replace(/'/g,"") == item.color &&
+            String(values[i][3]).replace(/'/g,"") == item.unit &&
+            String(values[i][4]).replace(/'/g,"") == item.po && 
+            String(values[i][5]).replace(/'/g,"") == item.shipdate &&
+            String(values[i][6]).replace(/'/g,"") == item.size) {
+            sheet.getRange(i + 1, 9).setValue("'"+newLoc); // Cột 9 là Location
+            break;
+        }
+    }
   }
 }
 `;
@@ -308,11 +380,14 @@ const normalize = (val) =>
 const calculateStockByLocation = (product, history) => {
   const itemHistory = history.filter(
     (h) =>
+      // CHECK FULL INFO
       normalize(h.sku) === normalize(product.sku) &&
       normalize(h.style) === normalize(product.style) &&
       normalize(h.color) === normalize(product.color) &&
+      normalize(h.unit) === normalize(product.unit) &&
       normalize(h.size) === normalize(product.size) &&
-      normalize(h.po) === normalize(product.po)
+      normalize(h.po) === normalize(product.po) &&
+      normalize(h.shipdate) === normalize(product.shipdate)
   );
   const locationMap = {};
   itemHistory.forEach((h) => {
@@ -333,11 +408,14 @@ const calculateTotalImport = (product, history) => {
   const itemHistory = history.filter(
     (h) =>
       h.type === "NHẬP" &&
+      // CHECK FULL INFO
       normalize(h.sku) === normalize(product.sku) &&
       normalize(h.style) === normalize(product.style) &&
       normalize(h.color) === normalize(product.color) &&
+      normalize(h.unit) === normalize(product.unit) &&
       normalize(h.size) === normalize(product.size) &&
-      normalize(h.po) === normalize(product.po)
+      normalize(h.po) === normalize(product.po) &&
+      normalize(h.shipdate) === normalize(product.shipdate)
   );
   return itemHistory.reduce((sum, h) => sum + (parseInt(h.quantity) || 0), 0);
 };
@@ -1542,10 +1620,7 @@ const CatalogView = ({
     unit: "",
     po: "",
     shipdate: "",
-    poQty: "",
     size: "",
-    masterBoxQty: "",
-    cartonSize: "",
     cartonNC: "",
     location: "",
   });
@@ -1563,10 +1638,7 @@ const CatalogView = ({
       unit: "",
       po: "",
       shipdate: "",
-      poQty: "",
       size: "",
-      masterBoxQty: "",
-      cartonSize: "",
       cartonNC: "",
       location: "",
     });
@@ -1586,11 +1658,8 @@ const CatalogView = ({
           unit: cols[3]?.trim() || "",
           po: cols[4]?.trim(),
           shipdate: cols[5]?.trim(),
-          poQty: cols[6]?.trim(),
-          size: cols[7]?.trim(),
-          masterBoxQty: cols[8]?.trim(),
-          cartonSize: cols[9]?.trim(),
-          cartonNC: cols[10]?.trim(),
+          size: cols[6]?.trim(),
+          cartonNC: cols[7]?.trim(),
           location: "",
         });
       }
@@ -1633,9 +1702,8 @@ const CatalogView = ({
         {isBulkMode ? (
           <div className="space-y-4">
             <div className="text-xs text-gray-500 bg-blue-50 p-2 rounded border border-blue-100">
-              <p className="font-bold mb-1">Thứ tự 11 cột (trái qua phải):</p>
-              Mã hàng | Style | Màu | Đơn | PO | Shipdate | PO qty | Size |
-              Master Box | KT Thùng | NC Thùng
+              <p className="font-bold mb-1">Thứ tự 8 cột (trái qua phải):</p>
+              Mã hàng | Style | Màu | Đơn | PO | Shipdate | Size | NC Thùng
             </div>
             <textarea
               rows={10}
@@ -1719,17 +1787,7 @@ const CatalogView = ({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="text-xs font-medium text-gray-600">
-                  PO Qty
-                </label>
-                <input
-                  className="w-full p-2 text-base border rounded"
-                  value={form.poQty}
-                  onChange={(e) => setForm({ ...form, poQty: e.target.value })}
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs font-medium text-gray-600">
                   Size
@@ -1738,32 +1796,6 @@ const CatalogView = ({
                   className="w-full p-2 text-base border rounded"
                   value={form.size}
                   onChange={(e) => setForm({ ...form, size: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-600">
-                  Mast. Box
-                </label>
-                <input
-                  className="w-full p-2 text-base border rounded"
-                  value={form.masterBoxQty}
-                  onChange={(e) =>
-                    setForm({ ...form, masterBoxQty: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs font-medium text-gray-600">
-                  KT Thùng
-                </label>
-                <input
-                  className="w-full p-2 text-base border rounded"
-                  value={form.cartonSize}
-                  onChange={(e) =>
-                    setForm({ ...form, cartonSize: e.target.value })
-                  }
                 />
               </div>
               <div>
@@ -2208,6 +2240,8 @@ const TransactionView = ({
   );
 };
 
+// ... (Các component khác giữ nguyên) ...
+
 // --- UPDATED HISTORY VIEW (WITH FILTER & PAGINATION) ---
 const HistoryView = ({ history, onDeleteHistoryItem, isAdmin }) => {
   const [page, setPage] = useState(1);
@@ -2620,11 +2654,11 @@ const SettingsHelpView = ({
       ) : (
         <>
           <h2 className="text-xl font-bold mb-4 text-blue-600">
-            CẬP NHẬT MÃ SCRIPT MỚI (V3.8 - FINAL)
+            CẬP NHẬT MÃ SCRIPT MỚI (V4.0 - FINAL)
           </h2>
           <p className="mb-2 text-sm text-red-500 font-bold">
-            QUAN TRỌNG: Bạn CẦN cập nhật mã này để kích hoạt tính năng lưu Đối
-            tác lên Sheet.
+            QUAN TRỌNG: Bạn CẦN cập nhật mã này để loại bỏ các cột thừa và áp
+            dụng logic kiểm tra mới.
           </p>
           <div className="bg-gray-900 text-gray-100 p-4 rounded text-xs overflow-x-auto relative">
             <button
@@ -2741,9 +2775,12 @@ export default function App() {
     const uniqueProducts = [];
 
     products.forEach((p) => {
+      // CHECK FULL INFO để tạo key
       const key = `${normalize(p.sku)}|${normalize(p.style)}|${normalize(
         p.color
-      )}|${normalize(p.size)}|${normalize(p.po)}`;
+      )}|${normalize(p.unit)}|${normalize(p.size)}|${normalize(
+        p.po
+      )}|${normalize(p.shipdate)}`;
       if (!processedKeys.has(key)) {
         processedKeys.add(key);
         uniqueProducts.push(p);
@@ -2984,9 +3021,13 @@ export default function App() {
     if (
       products.some(
         (p) =>
+          // CHECK FULL INFO
           p.sku === newProduct.sku &&
           p.style === newProduct.style &&
+          p.color === newProduct.color &&
+          p.unit === newProduct.unit &&
           p.po === newProduct.po &&
+          p.shipdate === newProduct.shipdate &&
           p.size === newProduct.size
       )
     ) {
@@ -3004,11 +3045,15 @@ export default function App() {
   const handleBulkAddProducts = async (newItems) => {
     let addedCount = 0;
     const currentItems = new Set(
-      products.map((p) => `${p.sku}-${p.style}-${p.po}-${p.size}`)
+      // CHECK FULL INFO
+      products.map(
+        (p) =>
+          `${p.sku}-${p.style}-${p.color}-${p.unit}-${p.po}-${p.shipdate}-${p.size}`
+      )
     );
     const itemsToAdd = [];
     newItems.forEach((item) => {
-      const key = `${item.sku}-${item.style}-${item.po}-${item.size}`;
+      const key = `${item.sku}-${item.style}-${item.color}-${item.unit}-${item.po}-${item.shipdate}-${item.size}`;
       if (!currentItems.has(key)) {
         itemsToAdd.push(item);
         currentItems.add(key);
@@ -3042,10 +3087,16 @@ export default function App() {
       const updated = products.filter(
         (p) =>
           !(
-            p.sku === itemToDelete.sku &&
-            p.po === itemToDelete.po &&
-            p.size === itemToDelete.size &&
-            p.style === itemToDelete.style
+            // CHECK FULL INFO
+            (
+              p.sku === itemToDelete.sku &&
+              p.style === itemToDelete.style &&
+              p.color === itemToDelete.color &&
+              p.unit === itemToDelete.unit &&
+              p.po === itemToDelete.po &&
+              p.shipdate === itemToDelete.shipdate &&
+              p.size === itemToDelete.size
+            )
           )
       );
       setProducts(updated);
@@ -3058,8 +3109,13 @@ export default function App() {
     const updatedHistory = history.map((h) => {
       if (
         h.type === "NHẬP" &&
+        // CHECK FULL INFO
         normalize(h.sku) === normalize(itemToUpdate.sku) &&
+        normalize(h.style) === normalize(itemToUpdate.style) &&
+        normalize(h.color) === normalize(itemToUpdate.color) &&
+        normalize(h.unit) === normalize(itemToUpdate.unit) &&
         normalize(h.po) === normalize(itemToUpdate.po) &&
+        normalize(h.shipdate) === normalize(itemToUpdate.shipdate) &&
         normalize(h.size) === normalize(itemToUpdate.size) &&
         h.locationOrReceiver === oldLoc
       ) {
@@ -3096,10 +3152,11 @@ export default function App() {
       unit: selectedProduct.unit,
       po: selectedProduct.po,
       shipdate: selectedProduct.shipdate,
-      poQty: selectedProduct.poQty,
+      // BỎ CÁC TRƯỜNG THỪA KHI GỬI
+      // poQty: selectedProduct.poQty,
       size: selectedProduct.size,
-      masterBoxQty: selectedProduct.masterBoxQty,
-      cartonSize: selectedProduct.cartonSize,
+      // masterBoxQty: selectedProduct.masterBoxQty,
+      // cartonSize: selectedProduct.cartonSize,
       cartonNC: selectedProduct.cartonNC,
       quantity: formData.quantity,
       // Fix V3.0: Luôn đảm bảo locationOrReceiver không phải undefined
@@ -3138,10 +3195,11 @@ export default function App() {
         unit: item.unit,
         po: item.po,
         shipdate: item.shipdate,
-        poQty: item.poQty,
+        // BỎ TRƯỜNG THỪA
+        // poQty: item.poQty,
         size: item.size,
-        masterBoxQty: item.masterBoxQty,
-        cartonSize: item.cartonSize,
+        // masterBoxQty: item.masterBoxQty,
+        // cartonSize: item.cartonSize,
         cartonNC: item.cartonNC,
         quantity: item.exportQty,
         locationOrReceiver: location || "", // Xuất từ vị trí này (Fix undefined)
@@ -3182,8 +3240,13 @@ export default function App() {
       updatedHistory = updatedHistory.map((h) => {
         if (
           h.type === "NHẬP" &&
+          // CHECK FULL INFO
           normalize(h.sku) === normalize(item.sku) &&
+          normalize(h.style) === normalize(item.style) &&
+          normalize(h.color) === normalize(item.color) &&
+          normalize(h.unit) === normalize(item.unit) &&
           normalize(h.po) === normalize(item.po) &&
+          normalize(h.shipdate) === normalize(item.shipdate) &&
           normalize(h.size) === normalize(item.size) &&
           h.locationOrReceiver === oldLoc
         ) {
@@ -3238,10 +3301,11 @@ export default function App() {
         unit: item.unit,
         po: item.po,
         shipdate: item.shipdate,
-        poQty: item.poQty,
+        // BỎ TRƯỜNG THỪA
+        // poQty: item.poQty,
         size: item.size,
-        masterBoxQty: item.masterBoxQty,
-        cartonSize: item.cartonSize,
+        // masterBoxQty: item.masterBoxQty,
+        // cartonSize: item.cartonSize,
         cartonNC: item.cartonNC,
         quantity: quantity,
         locationOrReceiver: location,
