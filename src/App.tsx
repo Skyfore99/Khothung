@@ -576,7 +576,7 @@ const Header = ({
     <div className="container mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
         <Database className="w-6 h-6 text-blue-400" />
-        <h1 className="text-xl font-bold hidden sm:block">Quản Lý Kho Pro</h1>
+        <h1 className="text-xl font-bold hidden sm:block">Quản Lý Kho Vỏ</h1>
         <h1 className="text-xl font-bold sm:hidden">QL Kho</h1>
         {isAdmin && (
           <span className="text-[10px] bg-red-600 px-2 py-0.5 rounded font-bold ml-2 animate-pulse">
@@ -3617,3 +3617,4 @@ export default function App() {
     </div>
   );
 }
+
