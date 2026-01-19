@@ -2852,11 +2852,12 @@ export default function App() {
     // Luôn luôn tạo vị trí "Hàng chưa có vị trí"
     data[UNASSIGNED_LOC] = [];
 
-    // 2. Build Lookup Maps từ History (Chỉ duyệt history 1 lần duy nhất)
-    const stockLookup = {}; // key -> { location: qty }
+    // 2. Build Lookup Maps từ History
+    // Cấu trúc mới: key -> { byLoc: { loc: qty }, info: itemObject }
+    const stockLookup = {};
     const importLookup = {}; // key -> totalImportQty
 
-    // Helper key generator (Comprehensive Key)
+    // Helper key generator
     const genKey = (p) =>
       `${normalize(p.sku)}|${normalize(p.style)}|${normalize(
         p.color
@@ -2868,7 +2869,12 @@ export default function App() {
       const key = genKey(h);
 
       // Init if not exists
-      if (!stockLookup[key]) stockLookup[key] = {};
+      if (!stockLookup[key]) {
+        stockLookup[key] = {
+          byLoc: {},
+          info: { ...h }, // Lưu lại thông tin gốc để hiển thị nếu không có trong Catalog
+        };
+      }
 
       let loc = h.locationOrReceiver;
       if (!loc || loc === "undefined" || loc === "null") loc = "Chưa set";
@@ -2876,40 +2882,54 @@ export default function App() {
       const qty = parseInt(h.quantity) || 0;
 
       // Init loc if not exists
-      if (!stockLookup[key][loc]) stockLookup[key][loc] = 0;
+      if (!stockLookup[key].byLoc[loc]) stockLookup[key].byLoc[loc] = 0;
 
       if (h.type === "NHẬP") {
-        stockLookup[key][loc] += qty;
+        stockLookup[key].byLoc[loc] += qty;
         // Accumulate total import
         if (!importLookup[key]) importLookup[key] = 0;
         importLookup[key] += qty;
       } else {
-        stockLookup[key][loc] -= qty;
+        stockLookup[key].byLoc[loc] -= qty;
       }
     });
 
-    // 3. Duyệt qua danh sách sản phẩm (đã lọc trùng) và lấy dữ liệu từ Lookup Map
-    const processedKeys = new Set();
+    // 3. Duyệt qua TẤT CẢ các key đã xuất hiện trong lịch sử (thay vì chỉ duyệt danh mục)
+    // Điều này giúp hiển thị cả những hàng "có trong kho nhưng chưa khai báo danh mục"
+    const allKeys = new Set([
+      ...Object.keys(stockLookup),
+      ...products.map((p) => genKey(p)),
+    ]);
 
-    products.forEach((p) => {
-      const key = genKey(p);
-      if (processedKeys.has(key)) return;
-      processedKeys.add(key);
+    allKeys.forEach((key) => {
+      // Tìm thông tin sản phẩm: Ưu tiên trong Catalog (để có NC Thùng), nếu ko có thì lấy từ History
+      const catalogItem = products.find((p) => genKey(p) === key);
+      const historyItem = stockLookup[key]?.info;
 
-      // Lấy thông tin đã tính toán trước
-      const itemStockByLoc = stockLookup[key] || {};
+      const p = catalogItem || historyItem;
+
+      // Nếu không tìm thấy thông tin ở đâu (trường hợp key chỉ có trong product mà chưa có history, vẫn cần hiện nếu muốn check 0)
+      // Nhưng logic ở đây tập trung hiển thị tồn kho. Nếu không có stockLookup thì stock = 0.
+      if (!p) return;
+
+      const itemStockByLoc = stockLookup[key]?.byLoc || {};
       const currentTotalImport = importLookup[key] || 0;
 
-      // Tính +/- KH
+      // Tính +/- KH (Chỉ có catalogItem mới có cartonNC chuẩn)
       const ncValue =
         parseFloat(String(p.cartonNC || "0").replace(/[^0-9.]/g, "")) || 0;
       const rawDiff = currentTotalImport - ncValue;
       const planDiff = ncValue > 0 ? rawDiff.toFixed(2) : "-";
 
       // Phân bổ vào data map
+      let hasStock = false;
       Object.entries(itemStockByLoc).forEach(([loc, qty]) => {
         if (qty > 0) {
+          hasStock = true;
           const itemData = { ...p, stock: qty, planDiff: planDiff };
+          // Quan trọng: Đảm bảo cartonNC được bảo tồn nếu lấy từ catalog
+          if (catalogItem) itemData.cartonNC = catalogItem.cartonNC;
+
           if (locations.includes(loc)) {
             data[loc].push(itemData);
           } else if (loc === "Chưa set" || !loc) {
@@ -3617,4 +3637,3 @@ export default function App() {
     </div>
   );
 }
-
