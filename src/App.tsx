@@ -55,290 +55,290 @@ import QrScanner from "react-qr-scanner";
 // --- MÃ SCRIPT GOOGLE SHEET (CẬP NHẬT V4.1 - FIX UNDEFINED) ---
 const SCRIPT_CODE = `
 function doGet(e) {
-  var doc = SpreadsheetApp.getActiveSpreadsheet();
-  var history = [];
+var doc = SpreadsheetApp.getActiveSpreadsheet();
+var history = [];
 
-  // Helper safe string
-  var safeStr = function(val) {
-      if (val === undefined || val === null) return "";
-      var s = String(val).trim();
-      if (s === "undefined" || s === "null") return "";
-      return s.startsWith("'") ? s.substring(1) : s; 
-  };
+// Helper safe string
+var safeStr = function(val) {
+    if (val === undefined || val === null) return "";
+    var s = String(val).trim();
+    if (s === "undefined" || s === "null") return "";
+    return s.startsWith("'") ? s.substring(1) : s; 
+};
 
-  function readFromSheet(sheetName) {
-    var sheet = doc.getSheetByName(sheetName);
-    if (sheet && sheet.getLastRow() > 1) {
-      var range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 14);
-      var data = range.getValues();
+function readFromSheet(sheetName) {
+  var sheet = doc.getSheetByName(sheetName);
+  if (sheet && sheet.getLastRow() > 1) {
+    var range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 14);
+    var data = range.getValues();
+    
+    for (var i = 0; i < data.length; i++) {
+      var r = data[i];
       
-      for (var i = 0; i < data.length; i++) {
-        var r = data[i];
-        
-        var dateVal = r[0];
-        if (dateVal instanceof Date) { dateVal = Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "yyyy-MM-dd"); } 
-        else { dateVal = safeStr(dateVal); }
+      var dateVal = r[0];
+      if (dateVal instanceof Date) { dateVal = Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "yyyy-MM-dd"); } 
+      else { dateVal = safeStr(dateVal); }
 
-        history.push({
-          date: dateVal, 
-          type: r[1], 
-          sku: safeStr(r[2]), 
-          style: safeStr(r[3]), 
-          color: safeStr(r[4]), 
-          unit: safeStr(r[5]), 
-          po: safeStr(r[6]), 
-          shipdate: safeStr(r[7]), 
-          size: safeStr(r[8]), 
-          cartonNC: r[9],    
-          quantity: r[10],   
-          locationOrReceiver: safeStr(r[11]), 
-          note: safeStr(r[12]), 
-          partner: r[13] ? safeStr(r[13]) : "" 
-        });
-      }
-    }
-  }
-  readFromSheet('NhapKho');
-  readFromSheet('XuatKho');
-  history.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
-
-  var sheetProducts = doc.getSheetByName('DanhMuc');
-  var products = [];
-  if (sheetProducts && sheetProducts.getLastRow() > 1) {
-    var pData = sheetProducts.getRange(2, 1, sheetProducts.getLastRow() - 1, 9).getValues();
-    for (var i = 0; i < pData.length; i++) {
-      var r = pData[i];
-      products.push({
-        sku: safeStr(r[0]), 
-        style: safeStr(r[1]), 
-        color: safeStr(r[2]), 
-        unit: safeStr(r[3]), 
-        po: safeStr(r[4]), 
-        shipdate: safeStr(r[5]), 
-        size: safeStr(r[6]), 
-        cartonNC: r[7],    
-        location: safeStr(r[8]) 
+      history.push({
+        date: dateVal, 
+        type: r[1], 
+        sku: safeStr(r[2]), 
+        style: safeStr(r[3]), 
+        color: safeStr(r[4]), 
+        unit: safeStr(r[5]), 
+        po: safeStr(r[6]), 
+        shipdate: safeStr(r[7]), 
+        size: safeStr(r[8]), 
+        cartonNC: r[9],    
+        quantity: r[10],   
+        locationOrReceiver: safeStr(r[11]), 
+        note: safeStr(r[12]), 
+        partner: r[13] ? safeStr(r[13]) : "" 
       });
     }
   }
+}
+readFromSheet('NhapKho');
+readFromSheet('XuatKho');
+history.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
 
-  var sheetConfig = doc.getSheetByName('CauHinh');
-  var adminPassword = "123456"; 
-  if (sheetConfig) {
-      var val = sheetConfig.getRange(1, 1).getValue();
-      if (val) adminPassword = val.toString();
+var sheetProducts = doc.getSheetByName('DanhMuc');
+var products = [];
+if (sheetProducts && sheetProducts.getLastRow() > 1) {
+  var pData = sheetProducts.getRange(2, 1, sheetProducts.getLastRow() - 1, 9).getValues();
+  for (var i = 0; i < pData.length; i++) {
+    var r = pData[i];
+    products.push({
+      sku: safeStr(r[0]), 
+      style: safeStr(r[1]), 
+      color: safeStr(r[2]), 
+      unit: safeStr(r[3]), 
+      po: safeStr(r[4]), 
+      shipdate: safeStr(r[5]), 
+      size: safeStr(r[6]), 
+      cartonNC: r[7],    
+      location: safeStr(r[8]) 
+    });
   }
+}
 
-  var sheetLocations = doc.getSheetByName('CauHinhViTri');
-  var locations = [];
-  var partners = [];
-  if (sheetLocations && sheetLocations.getLastRow() > 0) {
-      var lastRow = sheetLocations.getLastRow();
-      var range = sheetLocations.getRange(1, 1, lastRow, 2);
-      var lData = range.getValues();
-      for (var i = 0; i < lData.length; i++) {
-         if (lData[i][0]) locations.push(String(lData[i][0])); 
-         if (lData[i][1]) partners.push(String(lData[i][1]));  
-      }
-  }
+var sheetConfig = doc.getSheetByName('CauHinh');
+var adminPassword = "123456"; 
+if (sheetConfig) {
+    var val = sheetConfig.getRange(1, 1).getValue();
+    if (val) adminPassword = val.toString();
+}
 
-  return ContentService.createTextOutput(JSON.stringify({ 
-    status: "success", 
-    history: history, 
-    products: products,
-    settings: { password: adminPassword },
-    locations: locations,
-    partners: partners
-  })).setMimeType(ContentService.MimeType.JSON);
+var sheetLocations = doc.getSheetByName('CauHinhViTri');
+var locations = [];
+var partners = [];
+if (sheetLocations && sheetLocations.getLastRow() > 0) {
+    var lastRow = sheetLocations.getLastRow();
+    var range = sheetLocations.getRange(1, 1, lastRow, 2);
+    var lData = range.getValues();
+    for (var i = 0; i < lData.length; i++) {
+       if (lData[i][0]) locations.push(String(lData[i][0])); 
+       if (lData[i][1]) partners.push(String(lData[i][1]));  
+    }
+}
+
+return ContentService.createTextOutput(JSON.stringify({ 
+  status: "success", 
+  history: history, 
+  products: products,
+  settings: { password: adminPassword },
+  locations: locations,
+  partners: partners
+})).setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
-  var lock = LockService.getScriptLock();
-  lock.tryLock(30000); 
-  try {
-    var doc = SpreadsheetApp.getActiveSpreadsheet();
-    var data = JSON.parse(e.postData.contents);
-    var action = data.action;
+var lock = LockService.getScriptLock();
+lock.tryLock(30000); 
+try {
+  var doc = SpreadsheetApp.getActiveSpreadsheet();
+  var data = JSON.parse(e.postData.contents);
+  var action = data.action;
 
-    var safeStr = function(val) {
-          if (val === undefined || val === null) return "";
-          var s = String(val).trim();
-          if (s === "undefined" || s === "null") return "";
-          return s;
-    };
+  var safeStr = function(val) {
+        if (val === undefined || val === null) return "";
+        var s = String(val).trim();
+        if (s === "undefined" || s === "null") return "";
+        return s;
+  };
 
-    if (action === 'transaction') {
-      var sheetName = data.type === 'NHẬP' ? 'NhapKho' : 'XuatKho';
-      var sheet = doc.getSheetByName(sheetName);
-      if (!sheet) {
-        sheet = doc.insertSheet(sheetName);
-        sheet.appendRow(['Ngày', 'Loại', 'Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'Size', 'NC Thùng', 'SL', 'Vị trí/Nhóm', 'Ghi chú', 'Đối tác']);
-      }
-      
-      var locVal = safeStr(data.locationOrReceiver);
-      var noteVal = safeStr(data.note);
-      var partnerVal = safeStr(data.partner);
-
-      sheet.appendRow([
-        data.date, 
-        data.type, 
-        "'"+data.sku, 
-        "'"+data.style, 
-        "'"+data.color, 
-        "'"+data.unit, 
-        "'"+data.po, 
-        "'"+data.shipdate, 
-        "'"+data.size, 
-        "'"+data.cartonNC, 
-        data.quantity, 
-        "'"+locVal, 
-        "'"+noteVal,
-        "'"+partnerVal
-      ]);
-      
-      if (data.type === 'NHẬP' && locVal) {
-        updateLocationInSheet(doc, data, locVal);
-      }
-    }
-    // ... logic add_product, update_location ...
-    else if (action === 'add_product' || action === 'bulk_add_products') {
-      var sheet = doc.getSheetByName('DanhMuc');
-      if (!sheet) {
-        sheet = doc.insertSheet('DanhMuc');
-        sheet.appendRow(['Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'Size', 'NC Thùng', 'Vị trí']);
-      }
-      var items = action === 'add_product' ? [data] : data.items;
-      var newRows = [];
-      var currentData = [];
-      if (sheet.getLastRow() > 1) { 
-          currentData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues(); 
-      }
-      for (var i = 0; i < items.length; i++) {
-        var item = items[i];
-        var isDuplicate = false;
-        for (var j = 0; j < currentData.length; j++) {
-           var row = currentData[j];
-           if (String(row[0]).replace(/'/g,"") == item.sku && 
-               String(row[1]).replace(/'/g,"") == item.style && 
-               String(row[2]).replace(/'/g,"") == item.color && 
-               String(row[3]).replace(/'/g,"") == item.unit && 
-               String(row[4]).replace(/'/g,"") == item.po && 
-               String(row[5]).replace(/'/g,"") == item.shipdate && 
-               String(row[6]).replace(/'/g,"") == item.size) {
-               isDuplicate = true; break;
-           }
-        }
-        if (!isDuplicate) {
-           newRows.push([ 
-             "'"+item.sku, 
-             "'"+item.style, 
-             "'"+item.color, 
-             "'"+item.unit, 
-             "'"+item.po, 
-             "'"+item.shipdate, 
-             "'"+item.size, 
-             "'"+item.cartonNC, 
-             "'"+item.location 
-           ]);
-           currentData.push(["'"+item.sku, "'"+item.style, "'"+item.color, "'"+item.unit, "'"+item.po, "'"+item.shipdate, "'"+item.size]); 
-        }
-      }
-      if (newRows.length > 0) { sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 9).setValues(newRows); }
-      return ContentService.createTextOutput(JSON.stringify({"result":"success", "added": newRows.length})).setMimeType(ContentService.MimeType.JSON);
-    }
-    else if (action === 'update_location_history') {
-      var sheet = doc.getSheetByName('NhapKho');
-      if (sheet) {
-        var values = sheet.getDataRange().getValues();
-        var newLocSafe = safeStr(data.newLocation);
-        var oldLocSafe = safeStr(data.oldLocation);
-        
-        for (var i = 1; i < values.length; i++) {
-           if (String(values[i][2]).replace(/'/g,"") == data.sku && 
-               String(values[i][3]).replace(/'/g,"") == data.style &&
-               String(values[i][4]).replace(/'/g,"") == data.color &&
-               String(values[i][5]).replace(/'/g,"") == data.unit &&
-               String(values[i][6]).replace(/'/g,"") == data.po && 
-               String(values[i][7]).replace(/'/g,"") == data.shipdate &&
-               String(values[i][8]).replace(/'/g,"") == data.size &&
-               String(values[i][11]).replace(/'/g,"") == oldLocSafe) {
-               sheet.getRange(i + 1, 12).setValue("'"+newLocSafe);
-           }
-        }
-      }
-      updateLocationInSheet(doc, data, data.newLocation);
-    }
-    else if (action === 'delete_product') {
-        var sheet = doc.getSheetByName('DanhMuc');
-        if (sheet) {
-            var values = sheet.getDataRange().getValues();
-            for (var i = 1; i < values.length; i++) {
-            if (String(values[i][0]).replace(/'/g,"") == data.sku && 
-                String(values[i][1]).replace(/'/g,"") == data.style && 
-                String(values[i][2]).replace(/'/g,"") == data.color &&
-                String(values[i][3]).replace(/'/g,"") == data.unit &&
-                String(values[i][4]).replace(/'/g,"") == data.po && 
-                String(values[i][5]).replace(/'/g,"") == data.shipdate &&
-                String(values[i][6]).replace(/'/g,"") == data.size) {
-                sheet.deleteRow(i + 1); break;
-            }
-            }
-        }
-    }
-    else if (action === 'update_password') {
-      var sheet = doc.getSheetByName('CauHinh');
-      if (!sheet) { sheet = doc.insertSheet('CauHinh'); sheet.hideSheet(); }
-      sheet.getRange(1, 1).setValue(data.password);
-    }
-    else if (action === 'update_locations') {
-      var sheet = doc.getSheetByName('CauHinhViTri');
-      if (!sheet) { sheet = doc.insertSheet('CauHinhViTri'); sheet.hideSheet(); }
-      var maxRows = sheet.getMaxRows();
-      sheet.getRange(1, 1, maxRows, 1).clearContent(); 
-      var locs = data.locations;
-      if (locs && locs.length > 0) {
-         var rows = locs.map(function(l) { return [l]; });
-         sheet.getRange(1, 1, rows.length, 1).setValues(rows);
-      }
-    }
-    else if (action === 'update_partners') {
-      var sheet = doc.getSheetByName('CauHinhViTri');
-      if (!sheet) { sheet = doc.insertSheet('CauHinhViTri'); sheet.hideSheet(); }
-      var maxRows = sheet.getMaxRows();
-      sheet.getRange(1, 2, maxRows, 1).clearContent();
-      var parts = data.partners;
-      if (parts && parts.length > 0) {
-         var rows = parts.map(function(p) { return [p]; });
-         sheet.getRange(1, 2, rows.length, 1).setValues(rows);
-      }
+  if (action === 'transaction') {
+    var sheetName = data.type === 'NHẬP' ? 'NhapKho' : 'XuatKho';
+    var sheet = doc.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = doc.insertSheet(sheetName);
+      sheet.appendRow(['Ngày', 'Loại', 'Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'Size', 'NC Thùng', 'SL', 'Vị trí/Nhóm', 'Ghi chú', 'Đối tác']);
     }
     
-    return ContentService.createTextOutput(JSON.stringify({"result":"success"})).setMimeType(ContentService.MimeType.JSON);
-  } catch (e) {
-    return ContentService.createTextOutput(JSON.stringify({"result":"error", "error": e})).setMimeType(ContentService.MimeType.JSON);
-  } finally {
-    lock.releaseLock();
+    var locVal = safeStr(data.locationOrReceiver);
+    var noteVal = safeStr(data.note);
+    var partnerVal = safeStr(data.partner);
+
+    sheet.appendRow([
+      data.date, 
+      data.type, 
+      "'"+data.sku, 
+      "'"+data.style, 
+      "'"+data.color, 
+      "'"+data.unit, 
+      "'"+data.po, 
+      "'"+data.shipdate, 
+      "'"+data.size, 
+      "'"+data.cartonNC, 
+      data.quantity, 
+      "'"+locVal, 
+      "'"+noteVal,
+      "'"+partnerVal
+    ]);
+    
+    if (data.type === 'NHẬP' && locVal) {
+      updateLocationInSheet(doc, data, locVal);
+    }
   }
+  // ... logic add_product, update_location ...
+  else if (action === 'add_product' || action === 'bulk_add_products') {
+    var sheet = doc.getSheetByName('DanhMuc');
+    if (!sheet) {
+      sheet = doc.insertSheet('DanhMuc');
+      sheet.appendRow(['Mã hàng', 'Style', 'Màu', 'Đơn', 'PO', 'Shipdate', 'Size', 'NC Thùng', 'Vị trí']);
+    }
+    var items = action === 'add_product' ? [data] : data.items;
+    var newRows = [];
+    var currentData = [];
+    if (sheet.getLastRow() > 1) { 
+        currentData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues(); 
+    }
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var isDuplicate = false;
+      for (var j = 0; j < currentData.length; j++) {
+         var row = currentData[j];
+         if (String(row[0]).replace(/'/g,"") == item.sku && 
+             String(row[1]).replace(/'/g,"") == item.style && 
+             String(row[2]).replace(/'/g,"") == item.color && 
+             String(row[3]).replace(/'/g,"") == item.unit && 
+             String(row[4]).replace(/'/g,"") == item.po && 
+             String(row[5]).replace(/'/g,"") == item.shipdate && 
+             String(row[6]).replace(/'/g,"") == item.size) {
+             isDuplicate = true; break;
+         }
+      }
+      if (!isDuplicate) {
+         newRows.push([ 
+           "'"+item.sku, 
+           "'"+item.style, 
+           "'"+item.color, 
+           "'"+item.unit, 
+           "'"+item.po, 
+           "'"+item.shipdate, 
+           "'"+item.size, 
+           "'"+item.cartonNC, 
+           "'"+item.location 
+         ]);
+         currentData.push(["'"+item.sku, "'"+item.style, "'"+item.color, "'"+item.unit, "'"+item.po, "'"+item.shipdate, "'"+item.size]); 
+      }
+    }
+    if (newRows.length > 0) { sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 9).setValues(newRows); }
+    return ContentService.createTextOutput(JSON.stringify({"result":"success", "added": newRows.length})).setMimeType(ContentService.MimeType.JSON);
+  }
+  else if (action === 'update_location_history') {
+    var sheet = doc.getSheetByName('NhapKho');
+    if (sheet) {
+      var values = sheet.getDataRange().getValues();
+      var newLocSafe = safeStr(data.newLocation);
+      var oldLocSafe = safeStr(data.oldLocation);
+      
+      for (var i = 1; i < values.length; i++) {
+         if (String(values[i][2]).replace(/'/g,"") == data.sku && 
+             String(values[i][3]).replace(/'/g,"") == data.style &&
+             String(values[i][4]).replace(/'/g,"") == data.color &&
+             String(values[i][5]).replace(/'/g,"") == data.unit &&
+             String(values[i][6]).replace(/'/g,"") == data.po && 
+             String(values[i][7]).replace(/'/g,"") == data.shipdate &&
+             String(values[i][8]).replace(/'/g,"") == data.size &&
+             String(values[i][11]).replace(/'/g,"") == oldLocSafe) {
+             sheet.getRange(i + 1, 12).setValue("'"+newLocSafe);
+         }
+      }
+    }
+    updateLocationInSheet(doc, data, data.newLocation);
+  }
+  else if (action === 'delete_product') {
+      var sheet = doc.getSheetByName('DanhMuc');
+      if (sheet) {
+          var values = sheet.getDataRange().getValues();
+          for (var i = 1; i < values.length; i++) {
+          if (String(values[i][0]).replace(/'/g,"") == data.sku && 
+              String(values[i][1]).replace(/'/g,"") == data.style && 
+              String(values[i][2]).replace(/'/g,"") == data.color &&
+              String(values[i][3]).replace(/'/g,"") == data.unit &&
+              String(values[i][4]).replace(/'/g,"") == data.po && 
+              String(values[i][5]).replace(/'/g,"") == data.shipdate &&
+              String(values[i][6]).replace(/'/g,"") == data.size) {
+              sheet.deleteRow(i + 1); break;
+          }
+          }
+      }
+  }
+  else if (action === 'update_password') {
+    var sheet = doc.getSheetByName('CauHinh');
+    if (!sheet) { sheet = doc.insertSheet('CauHinh'); sheet.hideSheet(); }
+    sheet.getRange(1, 1).setValue(data.password);
+  }
+  else if (action === 'update_locations') {
+    var sheet = doc.getSheetByName('CauHinhViTri');
+    if (!sheet) { sheet = doc.insertSheet('CauHinhViTri'); sheet.hideSheet(); }
+    var maxRows = sheet.getMaxRows();
+    sheet.getRange(1, 1, maxRows, 1).clearContent(); 
+    var locs = data.locations;
+    if (locs && locs.length > 0) {
+       var rows = locs.map(function(l) { return [l]; });
+       sheet.getRange(1, 1, rows.length, 1).setValues(rows);
+    }
+  }
+  else if (action === 'update_partners') {
+    var sheet = doc.getSheetByName('CauHinhViTri');
+    if (!sheet) { sheet = doc.insertSheet('CauHinhViTri'); sheet.hideSheet(); }
+    var maxRows = sheet.getMaxRows();
+    sheet.getRange(1, 2, maxRows, 1).clearContent();
+    var parts = data.partners;
+    if (parts && parts.length > 0) {
+       var rows = parts.map(function(p) { return [p]; });
+       sheet.getRange(1, 2, rows.length, 1).setValues(rows);
+    }
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({"result":"success"})).setMimeType(ContentService.MimeType.JSON);
+} catch (e) {
+  return ContentService.createTextOutput(JSON.stringify({"result":"error", "error": e})).setMimeType(ContentService.MimeType.JSON);
+} finally {
+  lock.releaseLock();
+}
 }
 
 function updateLocationInSheet(doc, item, newLoc) {
-  if (!newLoc || newLoc === "undefined" || newLoc === "null") return;
-  var sheet = doc.getSheetByName('DanhMuc');
-  if (sheet) {
-    var values = sheet.getDataRange().getValues();
-    for (var i = 1; i < values.length; i++) {
-        if (String(values[i][0]).replace(/'/g,"") == item.sku && 
-            String(values[i][1]).replace(/'/g,"") == item.style && 
-            String(values[i][2]).replace(/'/g,"") == item.color &&
-            String(values[i][3]).replace(/'/g,"") == item.unit &&
-            String(values[i][4]).replace(/'/g,"") == item.po && 
-            String(values[i][5]).replace(/'/g,"") == item.shipdate &&
-            String(values[i][6]).replace(/'/g,"") == item.size) {
-            sheet.getRange(i + 1, 9).setValue("'"+newLoc);
-            break;
-        }
-    }
+if (!newLoc || newLoc === "undefined" || newLoc === "null") return;
+var sheet = doc.getSheetByName('DanhMuc');
+if (sheet) {
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+      if (String(values[i][0]).replace(/'/g,"") == item.sku && 
+          String(values[i][1]).replace(/'/g,"") == item.style && 
+          String(values[i][2]).replace(/'/g,"") == item.color &&
+          String(values[i][3]).replace(/'/g,"") == item.unit &&
+          String(values[i][4]).replace(/'/g,"") == item.po && 
+          String(values[i][5]).replace(/'/g,"") == item.shipdate &&
+          String(values[i][6]).replace(/'/g,"") == item.size) {
+          sheet.getRange(i + 1, 9).setValue("'"+newLoc);
+          break;
+      }
   }
+}
 }
 `;
 
@@ -2042,8 +2042,8 @@ const TransactionView = ({
   const planDifference = ncValue > 0 ? rawDiff.toFixed(2) : "-";
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-      <div className="md:col-span-2 bg-white rounded-xl shadow flex flex-col h-[600px]">
+    <div className="relative">
+      <div className="bg-white rounded-xl shadow flex flex-col h-[600px]">
         <div className="p-4 border-b bg-gray-50">
           <div className="flex justify-between items-center mb-3">
             <label className="block text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -2133,23 +2133,65 @@ const TransactionView = ({
                   normalize(selected.shipdate) === normalize(p.shipdate) &&
                   normalize(selected.size) === normalize(p.size);
 
+                // TÍNH TOÁN +/- KH CHO TỪNG ITEM
+                const ncValue =
+                  parseFloat(
+                    String(p.cartonNC || "0").replace(/[^0-9.]/g, "")
+                  ) || 0;
+                const currentTotalImport = calculateTotalImport(p, history);
+                const rawDiff = currentTotalImport - ncValue;
+                const planDifference = ncValue > 0 ? rawDiff.toFixed(2) : "-";
+
+                // Màu cho +/- KH
+                let planDiffColor = "text-black"; // Mặc định đen (>= 0)
+                let planDiffBg = "bg-gray-100";
+                if (planDifference !== "-") {
+                  const val = parseFloat(planDifference);
+                  if (val < 0) {
+                    planDiffColor = "text-red-600";
+                    planDiffBg = "bg-red-50";
+                  } else {
+                    planDiffColor = "text-green-700";
+                    planDiffBg = "bg-green-50";
+                  }
+                } else {
+                  planDiffColor = "text-gray-400";
+                }
+
                 return (
                   <li
                     key={idx}
                     onClick={() => setSelected(p)}
                     className={`p-3 cursor-pointer hover:bg-blue-50 transition-colors flex justify-between items-center ${
                       isSelected
-                        ? "bg-blue-100 ring-2 ring-inset ring-blue-400"
+                        ? "bg-blue-100 ring-2 ring-inset ring-orange-500"
                         : ""
                     }`}
                   >
                     <div className="w-full">
                       {/* CẢI TIẾN 1: STYLE VÀ PO TO Ở TRÊN */}
                       <div className="font-bold text-gray-800 text-lg flex justify-between items-center">
-                        <span className="truncate">{p.style}</span>
-                        <span className="text-sm bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded ml-2 whitespace-nowrap">
-                          PO: {p.po}
+                        <span className="truncate">
+                          {p.style}{" "}
+                          <span className="text-sm text-gray-500 font-normal">
+                            ({p.shipdate})
+                          </span>
                         </span>
+                        <div className="flex gap-2 items-center ml-2">
+                          {/* BADGE +/- KH */}
+                          <span
+                            className={`text-xs font-bold px-2 py-0.5 rounded whitespace-nowrap ${planDiffBg} ${planDiffColor} border ${
+                              isSelected
+                                ? "border-orange-500 ring-1 ring-orange-500"
+                                : "border-gray-300"
+                            }`}
+                          >
+                            +/- KH: {planDifference}
+                          </span>
+                          <span className="text-sm bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded whitespace-nowrap">
+                            PO: {p.po}
+                          </span>
+                        </div>
                       </div>
                       {/* THÔNG TIN KHÁC Ở DƯỚI */}
                       <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-2">
@@ -2183,141 +2225,151 @@ const TransactionView = ({
         </div>
       </div>
 
-      <div
-        className={`rounded-xl shadow p-6 h-fit text-white transition-colors duration-300 ${
-          activeTab === "input" ? "bg-blue-600" : "bg-orange-500"
-        }`}
-      >
-        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-          {activeTab === "input" ? <ArrowDownLeft /> : <ArrowUpRight />}{" "}
-          {activeTab === "input" ? "Phiếu Nhập" : "Phiếu Xuất"}
-        </h3>
-        {!selected ? (
-          <div className="text-white/70 text-center py-10 border-2 border-dashed border-white/30 rounded-lg">
-            Vui lòng chọn hàng từ danh sách.
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="bg-white/10 p-3 rounded-lg">
-              <div className="text-xs opacity-75">Đang chọn:</div>
-              <div className="font-bold text-lg truncate">{selected.sku}</div>
-              <div className="text-sm font-medium">
-                {selected.style} - {selected.color}
+      {/* MODAL PHIẾU NHẬP/XUẤT */}
+      {selected && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div
+            className={`rounded-xl shadow-2xl p-6 max-w-md w-full text-white transition-colors duration-300 ${
+              activeTab === "input" ? "bg-blue-600" : "bg-orange-500"
+            } relative max-h-[90vh] overflow-y-auto`}
+          >
+            {/* NÚT ĐÓNG */}
+            <button
+              onClick={() => setSelected(null)}
+              className="absolute top-3 right-3 text-white/70 hover:text-white hover:bg-white/10 rounded-full p-1 transition-all"
+              type="button"
+            >
+              <X size={20} />
+            </button>
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+              {activeTab === "input" ? <ArrowDownLeft /> : <ArrowUpRight />}{" "}
+              {activeTab === "input" ? "Phiếu Nhập" : "Phiếu Xuất"}
+            </h3>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="bg-white/10 p-3 rounded-lg">
+                <div className="text-xs opacity-75">Đang chọn:</div>
+                <div className="font-bold text-lg truncate">{selected.sku}</div>
+                <div className="text-sm font-medium">
+                  {selected.style} - {selected.color}
+                </div>
+                <div className="text-xs opacity-75 mt-1">
+                  Đơn: {selected.unit} | PO: {selected.po}
+                </div>
+                <div className="mt-2 pt-2 border-t border-white/20 text-xs font-mono text-yellow-200">
+                  Tồn: {stockDisplay || "0"}
+                </div>
+                {/* CẢI TIẾN 2: THÊM DÒNG +/- KH (NEW LOGIC) */}
+                <div className="text-xs font-mono text-white mt-1">
+                  +/- KH: <strong>{planDifference}</strong>
+                  {planDifference !== "-" && planDifference < 0 && " (Vượt)"}
+                </div>
               </div>
-              <div className="text-xs opacity-75 mt-1">
-                Đơn: {selected.unit} | PO: {selected.po}
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20 text-xs font-mono text-yellow-200">
-                Tồn: {stockDisplay || "0"}
-              </div>
-              {/* CẢI TIẾN 2: THÊM DÒNG +/- KH (NEW LOGIC) */}
-              <div className="text-xs font-mono text-white mt-1">
-                +/- KH: <strong>{planDifference}</strong>
-                {planDifference !== "-" && planDifference < 0 && " (Vượt)"}
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium mb-1">Ngày</label>
-                <input
-                  required
-                  type="date"
-                  value={form.date}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, date: e.target.value }))
-                  }
-                  className="w-full p-2 rounded text-gray-800 text-base outline-none"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Ngày</label>
+                  <input
+                    required
+                    type="date"
+                    value={form.date}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, date: e.target.value }))
+                    }
+                    className="w-full p-2 rounded text-gray-800 text-base outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Số lượng
+                  </label>
+                  <input
+                    ref={quantityInputRef}
+                    autoFocus
+                    required
+                    type="number"
+                    min="1"
+                    value={form.quantity}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, quantity: e.target.value }))
+                    }
+                    className="w-full p-2 rounded text-gray-800 font-bold text-center outline-none focus:ring-4 focus:ring-white/50 text-base"
+                    placeholder="0"
+                  />
+                </div>
               </div>
+
+              <ConfigurableSelect
+                label={
+                  activeTab === "input"
+                    ? "Vị trí (Để trống = Chưa xếp)"
+                    : "Xuất từ Vị trí "
+                }
+                value={form.locationOrReceiver}
+                onChange={(val) =>
+                  setForm((prev) => ({ ...prev, locationOrReceiver: val }))
+                }
+                options={locations}
+                onOptionsChange={onLocationsChange}
+                placeholder={
+                  activeTab === "input"
+                    ? "Chọn vị trí (hoặc để trống)..."
+                    : "Chọn vị trí xuất..."
+                }
+                required={activeTab === "output"}
+                allowAdd={false} // QUAN TRỌNG: Chỉ cho chọn, không cho thêm mới tại đây
+              />
+
+              {/* Chỉ hiện ô Đối tác khi là XUẤT KHO */}
+              {activeTab === "output" && (
+                <ConfigurableSelect
+                  label="Nhóm"
+                  value={form.partner}
+                  onChange={(val) =>
+                    setForm((prev) => ({ ...prev, partner: val }))
+                  }
+                  options={partners}
+                  onOptionsChange={onPartnersChange}
+                  placeholder="Chọn đối tác..."
+                  allowAdd={true}
+                />
+              )}
+
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Số lượng
+                  Ghi chú
                 </label>
                 <input
-                  ref={quantityInputRef}
-                  autoFocus
-                  required
-                  type="number"
-                  min="1"
-                  value={form.quantity}
+                  type="text"
+                  value={form.note}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, quantity: e.target.value }))
+                    setForm((prev) => ({ ...prev, note: e.target.value }))
                   }
-                  className="w-full p-2 rounded text-gray-800 font-bold text-center outline-none focus:ring-4 focus:ring-white/50 text-base"
-                  placeholder="0"
+                  className="w-full p-2 rounded text-gray-800 text-base outline-none"
+                  placeholder="..."
                 />
               </div>
-            </div>
-
-            <ConfigurableSelect
-              label={
-                activeTab === "input"
-                  ? "Vị trí (Để trống = Chưa xếp)"
-                  : "Xuất từ Vị trí "
-              }
-              value={form.locationOrReceiver}
-              onChange={(val) =>
-                setForm((prev) => ({ ...prev, locationOrReceiver: val }))
-              }
-              options={locations}
-              onOptionsChange={onLocationsChange}
-              placeholder={
-                activeTab === "input"
-                  ? "Chọn vị trí (hoặc để trống)..."
-                  : "Chọn vị trí xuất..."
-              }
-              required={activeTab === "output"}
-              allowAdd={false} // QUAN TRỌNG: Chỉ cho chọn, không cho thêm mới tại đây
-            />
-
-            {/* Chỉ hiện ô Đối tác khi là XUẤT KHO */}
-            {activeTab === "output" && (
-              <ConfigurableSelect
-                label="Nhóm"
-                value={form.partner}
-                onChange={(val) =>
-                  setForm((prev) => ({ ...prev, partner: val }))
-                }
-                options={partners}
-                onOptionsChange={onPartnersChange}
-                placeholder="Chọn đối tác..."
-                allowAdd={true}
-              />
-            )}
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Ghi chú</label>
-              <input
-                type="text"
-                value={form.note}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, note: e.target.value }))
-                }
-                className="w-full p-2 rounded text-gray-800 text-base outline-none"
-                placeholder="..."
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading || !isOnline}
-              className={`w-full font-bold py-3 rounded-lg shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2 mt-4 ${
-                isOnline
-                  ? "bg-white text-gray-900 hover:bg-gray-100"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-              }`}
-            >
-              {loading ? (
-                "Đang xử lý..."
-              ) : (
-                <>
-                  <Save size={20} /> {isOnline ? `LƯU PHIẾU` : "Đang mất mạng"}
-                </>
-              )}
-            </button>
-          </form>
-        )}
-      </div>
+              <button
+                type="submit"
+                disabled={loading || !isOnline}
+                className={`w-full font-bold py-3 rounded-lg shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2 mt-4 ${
+                  isOnline
+                    ? "bg-white text-gray-900 hover:bg-gray-100"
+                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                {loading ? (
+                  "Đang xử lý..."
+                ) : (
+                  <>
+                    <Save size={20} />{" "}
+                    {isOnline ? `LƯU PHIẾU` : "Đang mất mạng"}
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
